@@ -1,0 +1,63 @@
+{
+    "BBA-CORE": {
+      "MCs_required": 50,
+      "Required_Courses": [
+        "ACC1701", "BSP1702", "MKT1705", "BSP1703", "DAO1704", "ES2002", "MNO1706",
+        "BSP2701", "DAO2702", "DAO2703", "MNO2705", "FIN2704", "BSP3701"
+      ],
+      "Num_Remaining_Electives": 0
+    },
+    "GE": {
+      "MCs_required": 24,
+      "Required_Courses": ["GEA", "GEI", "GEX", "GEN", "GESS", "GEC"],
+      "Num_Remaining_Electives": 0
+    },
+    "UE": {
+        "MCs_required": 46,
+        "Required_Courses": [],
+        "Num_Remaining_Electives": 12
+      },
+    "BBA-BZA": {
+        "MCs_required": 20,
+        "Required_Courses": ["DBA3702", "DBA3803", "IT3010"],
+        "Num_Remaining_Electives": 2
+    },
+    "BBA-BSN": {
+        "MCs_required": 20,
+        "Required_Courses": ["BSN3701", "BSN3702"],
+        "Num_Remaining_Electives": 3
+    },
+    "BBA-BSE": {
+        "MCs_required": 20,
+        "Required_Courses": ["BSE3702", "BSE3703"],
+        "Num_Remaining_Electives": 3
+    },
+    "BBA-MNO": {
+        "MCs_required": 20,
+        "Required_Courses": ["MNO3701", "MNO3702", "MNO3703"],
+        "Num_Remaining_Electives": 2
+    },
+    "BBA-FIN": {
+        "MCs_required": 20,
+        "Required_Courses": ["FIN3701", "FIN3702", "FIN3703"],
+        "Num_Remaining_Electives": 2
+    },
+    "BBA-MKT": {
+        "MCs_required": 20,
+        "Required_Courses": ["MKT3701", "MKT3702"],
+        "Num_Remaining_Electives": 3
+    },
+    "BBA-DOS": {
+        "MCs_required": 20,
+        "Required_Courses": ["DOS3701", "DOS3703", "DOS3704"],
+        "Num_Remaining_Electives": 2
+    },
+    "BBA-HONS": {
+        "MCs_required": 20,
+        "Requirements": {
+          "Research" : ["Dissertation", "2 Independent Study Course / FSP"],
+          "Coursework" : ["3 level-4000 SPEC", "FSP"]
+        }
+      }
+}
+  

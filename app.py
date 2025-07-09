@@ -3,18 +3,13 @@ import plotly.express as px
 import streamlit as st
 import numpy as np
 import altair as alt
+import json
 
 # emojis: https://www.webfx.com/tools/emoji-cheat-sheet/
 
-# How many MCs have I taken, and how much more do I need to complete (%) until graduation?
-# What is my CGPA?
-# How many MCs for each Core/GE/UE/Spec have I taken, and what is my completion rate (%) for each?
-# What are the modules I took for each Core/GE/UE/Spec?
-# Overall grade distribution
-# CGPA over time
-
 #######################
 # Page configuration
+
 st.set_page_config(
     page_title="NUS Dashboard",
     page_icon="🏂",
@@ -23,6 +18,9 @@ st.set_page_config(
 
 with open('style.css') as f:
     st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+
+with open('track_requirements.json') as f:
+    track_requirements = json.load(f)
 
 #######################
 # Helper Functions
@@ -46,56 +44,126 @@ def grade_point_mapper(grade):
     if grade in grade_point_mapping.keys():
         return grade_point_mapping[grade]
     return None
-    
-def cgpa_calculator(data):
 
-    data = data[~(data['Grade'] == "S")]
-    grade_point_vector = data['Grade'].apply(grade_point_mapper)
-    units_vector = data['Units']
-    cgpa = round(np.sum(grade_point_vector * units_vector) / sum(units_vector), 2)
-    return cgpa
-
-def get_track_requirements(track:str):
-    if track == 'BBA-CORE':
-        return 50
-    elif track == 'GE':
-        return 24
-    elif track == 'BBA-HONS':
-        return 20
-    elif track == 'UE':
-        return 46
-    elif track.startswith('BBA-') and track != 'BBA-CORE':
-        return 20
-    elif track.startswith('MINOR-'):
+def get_track_MC_requirements(track:str):
+    if track.startswith('MINOR-'):
         return 20
     elif track.startswith('MAJOR-'):
         return 40
     else:
-        return None
+        return track_requirements[track]['MCs_required']
 
-def individual_track_progress(data):
+#######################
+# User Class
+
+class User:
+
+    def __init__(self, raw_data):
+        self.raw_data = raw_data
+        self.filtered_data = raw_data
+        self.main_track = None
+        self.individual_track_progress = None
     
-    data = data.groupby('Module_Type').agg({'Units' : 'sum'}).reset_index()
+    def apply_filter(self, selected_tracks):
+        if selected_tracks:
+            self.filtered_data = self.raw_data[self.raw_data['Module_Type'].isin(selected_tracks)]
+        else:
+            self.filtered_data = None
+    
+    def set_main_track(self, main_track):
+        self.main_track = main_track
 
-    data['Track_Requirement'] = data['Module_Type'].apply(get_track_requirements)
+    def get_filtered_data(self):
+        return self.filtered_data
+    
+    def get_total_MCs(self): # returns integer
+        return int(self.filtered_data['Units'].sum()) 
+    
+    def get_completion_rate(self):
+        total_MCs_requirement = 160
+        return round((self.get_total_MCs() / total_MCs_requirement)*100, 1)
+    
+    def get_cgpa(self): # returns integer
+        data = self.filtered_data[~(self.filtered_data['Grade'] == "S")]
+        grade_point_vector = data['Grade'].apply(grade_point_mapper)
+        units_vector = data['Units']
+        cgpa = round(np.sum(grade_point_vector * units_vector) / sum(units_vector), 2)
+        return cgpa 
+    
+    def get_individual_track_progress(self): # returns dataframe
 
-    data['New_Module_Type'] = data['Module_Type'].apply(
-        lambda x : (
-            x if x in ['BBA-CORE', 'GE', 'BBA-HONS', 'UE', main_spec] else
-            'UE' if x.startswith('MINOR-') else
-            'UE' if x.startswith('MAJOR-') else
-            'UE'
+        data = self.filtered_data.groupby('Module_Type').agg({'Units' : 'sum'}).reset_index()
+
+        data['Track_Requirement'] = data['Module_Type'].apply(get_track_MC_requirements)
+
+        data['New_Module_Type'] = data['Module_Type'].apply(
+            lambda x : (
+                x if x in ['BBA-CORE', 'GE', 'BBA-HONS', 'UE', self.main_track] else
+                'UE' if x.startswith('MINOR-') else
+                'UE' if x.startswith('MAJOR-') else
+                'UE'
+            )
         )
-    )
 
-    data.loc[data['Module_Type']=='UE', 'Units'] = data[data['New_Module_Type']=='UE']['Units'].sum()
+        data.loc[data['Module_Type']=='UE', 'Units'] = data[data['New_Module_Type']=='UE']['Units'].sum()
 
-    data['Completion_Rate'] = ((data['Units'] / data['Track_Requirement'])*100).round(2)
-   
-    return data[['Module_Type', 'Completion_Rate']]
+        data['Completion_Rate'] = ((data['Units'] / data['Track_Requirement'])*100).round(2)
 
-def individual_track_taken(data):
-    return data[['Module_Code', 'Module_Type', 'Grade']]
+        individual_track_progress = data[['Module_Type', 'Completion_Rate']]
+
+        self.individual_track_progress = individual_track_progress
+    
+        return individual_track_progress
+    
+    def get_outstanding_modules(self):
+
+        individual_track_progress = self.individual_track_progress
+
+        incomplete_tracks = list(individual_track_progress[individual_track_progress['Completion_Rate'] < 100]['Module_Type'])
+
+        incomplete_tracks_results = {}
+
+        for track in incomplete_tracks:
+
+            if track == 'BBA-HONS' or track == 'UE' or track.startswith("MINOR-") or track.startswith("MAJOR-"):
+                continue
+
+            required_courses = track_requirements[track]['Required_Courses']
+            num_remaining_electives =  track_requirements[track]['Num_Remaining_Electives']
+            completed_courses = list(self.filtered_data[self.filtered_data['Module_Type'] == track]['Module_Code'])
+
+            if track == 'BBA-CORE':
+                to_be_completed = list(set(required_courses) - set(completed_courses))
+
+            if track == 'GE':
+                to_be_completed = [prefix for prefix in required_courses if not any(item.startswith(prefix) for item in completed_courses)]
+
+            if track.startswith('BBA-') and track != 'BBA-CORE':
+                electives_taken = list(set(completed_courses) - set(required_courses))
+                to_be_completed = list(set(required_courses) - set(required_courses))
+                if len(electives_taken) < num_remaining_electives:
+                    warning = f"You still have {num_remaining_electives - len(electives_taken)} number of electives for {track}!"
+
+            # if track == 'UE':
+            #     electives_taken = list(self.filtered_data[~self.filtered_data['Module_Type'].isin(['BBA-CORE', 'BBA-HONS', 'GE', self.main_track])]['Module_Code'])
+            #     for i in electives_taken:
+            #         st.markdown(f"-{i}")
+            #     warning = f"You still have {num_remaining_electives - len(electives_taken)} number of electives for {track}!"
+
+            incomplete_tracks_results[track] = to_be_completed + [warning]
+        
+        return incomplete_tracks_results.items()
+    
+        # identify which track is not at 100% completion rate
+        # for track i, 
+        #       collect all completed modules in a list
+        #       obtain full list of requirements for track i
+        #       if it is CORE/GE and all must be completed, simply compare which module exists in full list but not in completed list
+        #       if it is SPEC, compare which compulsory modules need to be done and based on completion rate, how many more elective needed
+        #       if it is HONS, 
+
+#######################
+# Functions for Main Panel Widgets
 
 def plot_metric_box(label, value:int):
     delta = +4
@@ -146,17 +214,17 @@ with st.sidebar:
         st.warning("Please upload your Excel file.")
         st.stop()
 
-    module_type = st.multiselect(
+    user = User(df)
+
+    selected_tracks = st.multiselect(
         "Select the Specialisation:",
         options=df['Module_Type'].unique(),
         default=df['Module_Type'].unique()
     )
 
-    df_selection = df.query(
-        "Module_Type == @module_type"
-    )
+    user.apply_filter(selected_tracks)
 
-    if df_selection.empty:
+    if user.get_filtered_data() is None or user.get_filtered_data().empty:
         st.warning("No data available based on the current filter settings!")
         st.stop()
 
@@ -164,10 +232,8 @@ with st.sidebar:
 # Main Page
 
 # -- Top Progress Bar:
-num_MCs = int(df_selection["Units"].sum())
-total_MCs_requirement = 160
-completion_rate = round((num_MCs / total_MCs_requirement)*100, 1)
 
+completion_rate = user.get_completion_rate()
 st.markdown(f"#### Completion Rate: {completion_rate}%")
 st.progress(int(completion_rate))
 
@@ -178,10 +244,11 @@ with col1:
 
     st.markdown('#### Overall Academic Metrics')
 
-    plot_metric_box(label='Total MCs', value=num_MCs)
-    plot_metric_box(label='Cumulative GPA', value=cgpa_calculator(df_selection))
+    plot_metric_box(label='Total MCs', value=user.get_total_MCs())
 
-    grade_counts = df_selection['Grade'].value_counts().reset_index()
+    plot_metric_box(label='Cumulative GPA', value=user.get_cgpa())
+
+    grade_counts = user.get_filtered_data()['Grade'].value_counts().reset_index()
     grade_counts.columns = ['Grade', 'Count']
     fig = px.pie(
         grade_counts, 
@@ -202,10 +269,14 @@ with col2:
     table_col1, table_col2 = st.columns(2)
 
     with table_col1:
-        main_spec = st.selectbox('Select your Main Specialisation', options=df_selection['Module_Type'].unique())
-        individual_track_progress_df = individual_track_progress(df_selection)
 
-        st.dataframe(individual_track_progress_df,
+        data = user.get_filtered_data()
+
+        main_track = st.selectbox('Select your Main Specialisation', options=data['Module_Type'].unique())
+
+        user.set_main_track(main_track)
+
+        st.dataframe(user.get_individual_track_progress(),
                     column_order=('Module_Type', 'Completion_Rate'),
                     hide_index=True,
                     width=None,
@@ -238,7 +309,10 @@ with col2:
         )
 
     with table_col2:
-        st.dataframe(individual_track_taken(df_selection))
+        for track, messages in user.get_outstanding_modules():
+            st.markdown(f"**{track}:**")
+            for msg in messages:
+                st.markdown(f"- {msg}")
 
 #######################
 # Hide Streamlit Style
