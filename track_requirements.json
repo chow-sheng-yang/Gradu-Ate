@@ -55,9 +55,10 @@
     "BBA-HONS": {
         "MCs_required": 20,
         "Requirements": {
-          "Research" : ["Dissertation", "2 Independent Study Course / FSP"],
-          "Coursework" : ["3 level-4000 SPEC", "FSP"]
+          "Research" : ["BHD4001", "2 Independent Study Course / FSP4003"],
+          "Coursework" : ["3 level-4000 SPEC", "FSP4003"]
         }
       }
 }
   
+
