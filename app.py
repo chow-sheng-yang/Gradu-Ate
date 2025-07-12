@@ -1,9 +1,14 @@
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 import numpy as np
 import altair as alt
 import json
+from helper_functions import grade_point_mapper, get_track_requirements
+from grade_optimiser import GradeOptimizer
+from collections import Counter
+from user import User
 
 # emojis: https://www.webfx.com/tools/emoji-cheat-sheet/
 
@@ -19,153 +24,29 @@ st.set_page_config(
 with open('style.css') as f:
     st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 
-with open('track_requirements.json') as f:
-    track_requirements = json.load(f)
-
 #######################
-# Helper Functions
+# Functions for Main Panel Charts/Widgets
 
-def grade_point_mapper(grade):
-
-    grade_point_mapping = {
-        "A+" : 5,
-        "A" : 5,
-        "A-" : 4.5,
-        "B+" : 4,
-        "B" : 3.5,
-        "B-" : 3,
-        "C+" : 2.5,
-        "C" : 2,
-        "D+" : 1.5,
-        "D" : 1,
-        "F" : 0,
-        "S" : 0  
-    }
-    if grade in grade_point_mapping.keys():
-        return grade_point_mapping[grade]
-    return None
-
-def get_track_MC_requirements(track:str):
-    if track.startswith('MINOR-'):
-        return 20
-    elif track.startswith('MAJOR-'):
-        return 40
-    else:
-        return track_requirements[track]['MCs_required']
-
-#######################
-# User Class
-
-class User:
-
-    def __init__(self, raw_data):
-        self.raw_data = raw_data
-        self.filtered_data = raw_data
-        self.main_track = None
-        self.individual_track_progress = None
-    
-    def apply_filter(self, selected_tracks):
-        if selected_tracks:
-            self.filtered_data = self.raw_data[self.raw_data['Module_Type'].isin(selected_tracks)]
-        else:
-            self.filtered_data = None
-    
-    def set_main_track(self, main_track):
-        self.main_track = main_track
-
-    def get_filtered_data(self):
-        return self.filtered_data
-    
-    def get_total_MCs(self): # returns integer
-        return int(self.filtered_data['Units'].sum()) 
-    
-    def get_completion_rate(self):
-        total_MCs_requirement = 160
-        return round((self.get_total_MCs() / total_MCs_requirement)*100, 1)
-    
-    def get_cgpa(self): # returns integer
-        data = self.filtered_data[~(self.filtered_data['Grade'] == "S")]
-        grade_point_vector = data['Grade'].apply(grade_point_mapper)
-        units_vector = data['Units']
-        cgpa = round(np.sum(grade_point_vector * units_vector) / sum(units_vector), 2)
-        return cgpa 
-    
-    def get_individual_track_progress(self): # returns dataframe
-
-        data = self.filtered_data.groupby('Module_Type').agg({'Units' : 'sum'}).reset_index()
-
-        data['Track_Requirement'] = data['Module_Type'].apply(get_track_MC_requirements)
-
-        data['New_Module_Type'] = data['Module_Type'].apply(
-            lambda x : (
-                x if x in ['BBA-CORE', 'GE', 'BBA-HONS', 'UE', self.main_track] else
-                'UE' if x.startswith('MINOR-') else
-                'UE' if x.startswith('MAJOR-') else
-                'UE'
+def render_note():
+        st.markdown(
+                """
+                <div style="
+                    background-color: #fff8e1;
+                    border-left: 6px solid #fbc02d;
+                    padding: 0.5rem;
+                    margin-top: 0.15rem;
+                    margin-bottom: 0.15rem;
+                    border-radius: 0.5rem;
+                    font-size: 0.95rem;
+                    color: #1a1a1a;
+                ">
+                    <strong style="color:#f57f17;">⚠️ Note:</strong> Tracks that are not CORE, GE, HONS or Main Specialisation will count to UEs!
+                </div>
+                """,
+                unsafe_allow_html=True
             )
-        )
-
-        data.loc[data['Module_Type']=='UE', 'Units'] = data[data['New_Module_Type']=='UE']['Units'].sum()
-
-        data['Completion_Rate'] = ((data['Units'] / data['Track_Requirement'])*100).round(2)
-
-        individual_track_progress = data[['Module_Type', 'Completion_Rate']]
-
-        self.individual_track_progress = individual_track_progress
-    
-        return individual_track_progress
-    
-    def get_outstanding_modules(self):
-
-        individual_track_progress = self.individual_track_progress
-
-        incomplete_tracks = list(individual_track_progress[individual_track_progress['Completion_Rate'] < 100]['Module_Type'])
-
-        incomplete_tracks_results = {}
-
-        for track in incomplete_tracks:
-
-            if track == 'BBA-HONS' or track == 'UE' or track.startswith("MINOR-") or track.startswith("MAJOR-"):
-                continue
-
-            required_courses = track_requirements[track]['Required_Courses']
-            num_remaining_electives =  track_requirements[track]['Num_Remaining_Electives']
-            completed_courses = list(self.filtered_data[self.filtered_data['Module_Type'] == track]['Module_Code'])
-
-            if track == 'BBA-CORE':
-                to_be_completed = list(set(required_courses) - set(completed_courses))
-
-            if track == 'GE':
-                to_be_completed = [prefix for prefix in required_courses if not any(item.startswith(prefix) for item in completed_courses)]
-
-            if track.startswith('BBA-') and track != 'BBA-CORE':
-                electives_taken = list(set(completed_courses) - set(required_courses))
-                to_be_completed = list(set(required_courses) - set(required_courses))
-                if len(electives_taken) < num_remaining_electives:
-                    warning = f"You still have {num_remaining_electives - len(electives_taken)} number of electives for {track}!"
-
-            # if track == 'UE':
-            #     electives_taken = list(self.filtered_data[~self.filtered_data['Module_Type'].isin(['BBA-CORE', 'BBA-HONS', 'GE', self.main_track])]['Module_Code'])
-            #     for i in electives_taken:
-            #         st.markdown(f"-{i}")
-            #     warning = f"You still have {num_remaining_electives - len(electives_taken)} number of electives for {track}!"
-
-            incomplete_tracks_results[track] = to_be_completed + [warning]
         
-        return incomplete_tracks_results.items()
-    
-        # identify which track is not at 100% completion rate
-        # for track i, 
-        #       collect all completed modules in a list
-        #       obtain full list of requirements for track i
-        #       if it is CORE/GE and all must be completed, simply compare which module exists in full list but not in completed list
-        #       if it is SPEC, compare which compulsory modules need to be done and based on completion rate, how many more elective needed
-        #       if it is HONS, 
-
-#######################
-# Functions for Main Panel Widgets
-
-def plot_metric_box(label, value:int):
+def render_metric_box(label, value:int):
     delta = +4
     st.markdown(
         f"""
@@ -191,6 +72,137 @@ def plot_metric_box(label, value:int):
         unsafe_allow_html=True
     )
 
+def render_completion_table(df):
+    for _, row in df.iterrows():
+        module = row['Module_Type']
+        rate = row['Completion_Rate']
+
+        st.markdown(f"""
+        <div style="
+            margin-bottom: 1rem;
+            padding: 0.75rem 1rem;
+            background: #fff;
+            border-radius: 0.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        ">
+            <strong style="color: #2a2a2a;">{module}</strong>
+            <div style="
+                margin-top: 0.4rem;
+                height: 16px;
+                background: #e6f2f8;
+                border-radius: 999px;
+                overflow: hidden;
+            ">
+                <div style="
+                    width: {rate}%;
+                    height: 100%;
+                    background: linear-gradient(90deg, #2ec4b6, #00b4d8);
+                    transition: width 1s ease-in-out;
+                "></div>
+            </div>
+            <p style="margin: 0.25rem 0 0; font-size: 0.85rem; color: #555;">
+                {rate:.2f}%
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+def render_grade_chart(actual_counts: dict, target_counts: dict):
+    df_actual = pd.DataFrame(list(actual_counts.items()), columns=['Grade', 'Count'])
+    df_target = pd.DataFrame(list(target_counts.items()), columns=['Grade', 'Count'])
+    df_actual['Type'] = 'Actual'
+    df_target['Type'] = 'Target'
+
+    # Convert grades to string to avoid sorting errors
+    df_actual['Grade'] = df_actual['Grade'].astype(str)
+    df_target['Grade'] = df_target['Grade'].astype(str)
+
+    # Combine all grades to get consistent sorting order
+    all_grades = sorted(set(df_actual['Grade']) | set(df_target['Grade']))
+    df_actual['Grade'] = pd.Categorical(df_actual['Grade'], categories=all_grades, ordered=True)
+    df_target['Grade'] = pd.Categorical(df_target['Grade'], categories=all_grades, ordered=True)
+
+    # Combine both dataframes for layered chart
+    df_combined = pd.concat([df_target, df_actual])
+
+    # Create chart with color encoding by Type for legend
+    chart = alt.Chart(df_combined).mark_bar().encode(
+        y=alt.Y('Grade:N', sort=all_grades, title='Grade'),
+        x=alt.X('Count:Q', title='Count', scale=alt.Scale(domain=[0, df_combined['Count'].max() + 1])),
+        color=alt.Color('Type:N',
+                        scale=alt.Scale(domain=['Target', 'Actual'],
+                                        range=['#d3e9f6', '#29b5e8']),
+                        legend=alt.Legend(title="Legend")),
+        tooltip=['Grade', 'Count', 'Type']
+    ).properties(
+        width=300,
+        height=300
+    ).configure_view(
+        stroke=None
+    )
+
+    st.altair_chart(chart, use_container_width=True)
+
+def render_completion_donut(completion_rate, label, color_theme):
+
+    color_map = {
+        'blue': ['#29b5e8', '#cceefa'],
+        'green': ['#27AE60', '#c2f0d1'],
+        'orange': ['#F39C12', '#fce6c5'],
+        'red': ['#E74C3C', '#f5cccc']
+    }
+
+    chart_color = color_map.get(color_theme, color_map['blue'])
+
+    # Data
+    source = pd.DataFrame({
+        "Label": ['', label],
+        "Value": [100 - completion_rate, completion_rate]
+    })
+    source_bg = pd.DataFrame({
+        "Label": ['', label],
+        "Value": [100, 0]
+    })
+
+    # Chart
+    plot_bg = alt.Chart(source_bg).mark_arc(innerRadius=80, cornerRadius=15).encode(
+        theta="Value:Q",
+        color=alt.Color("Label:N",
+                        scale=alt.Scale(domain=[label, ''], range=chart_color),
+                        legend=None)
+    ).properties(width=200, height=200)
+
+    plot = alt.Chart(source).mark_arc(innerRadius=80, cornerRadius=15).encode(
+        theta="Value:Q",
+        color=alt.Color("Label:N",
+                        scale=alt.Scale(domain=[label, ''], range=chart_color),
+                        legend=None)
+    ).properties(width=200, height=200)
+
+    text = alt.Chart(pd.DataFrame({'text': [f"{completion_rate:.1f}%"]})).mark_text(
+        font="Lato", fontSize=26, fontWeight="bold", color=chart_color[0]
+    ).encode(text='text:N')
+
+    donut_chart = plot_bg + plot + text
+
+    # Card wrapper
+    with st.container():
+        st.markdown(f"""
+            <div style="
+                margin-bottom: 1rem;
+                padding: 1rem;
+                background: #fff;
+                border-radius: 0.5rem;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+                text-align: center;
+            ">
+                <strong style="color: #2a2a2a; font-size: 1.05rem;">{label}</strong>
+            """, unsafe_allow_html=True)
+
+        st.altair_chart(donut_chart, use_container_width=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        
 #######################
 # Reading Data
 
@@ -206,7 +218,17 @@ def get_data_from_excel(file):
 
 with st.sidebar:
 
-    st.title("NUS Dashboard")
+# -- Side Bar Title:
+
+    st.markdown("## 🎓 NUS Dashboard")
+
+# -- User Information:
+
+    name = st.text_input("👤 Enter your name")
+    year = st.selectbox("📅 Year of Study", options=["1", "2", "3", "4", "5+"], index=0)
+    faculty = st.selectbox("🏛️ Faculty", options=["School of Business", "Engineering", "FASS", "Computing", "Science", "Others"], index=0)
+
+# -- User Upload File Section:
 
     uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx"])
     df = get_data_from_excel(uploaded_file)
@@ -214,13 +236,24 @@ with st.sidebar:
         st.warning("Please upload your Excel file.")
         st.stop()
 
-    user = User(df)
+    user = User(user_name=name, user_year=year, user_faculty=faculty, raw_data=df)
+
+# -- User Select Specialisation Section:
 
     selected_tracks = st.multiselect(
-        "Select the Specialisation:",
+        "Select the tracks you want to view:",
         options=df['Module_Type'].unique(),
         default=df['Module_Type'].unique()
     )
+
+    specialisation_options = [track for track in selected_tracks if \
+                              (track.startswith('BBA-')) and \
+                              (track != "BBA-CORE") and \
+                              (track != "BBA-HONS")]
+    main_track = st.selectbox('Select your main track/specialisation:', 
+                            options=specialisation_options)
+
+    user.set_main_track(main_track)
 
     user.apply_filter(selected_tracks)
 
@@ -228,38 +261,69 @@ with st.sidebar:
         st.warning("No data available based on the current filter settings!")
         st.stop()
 
+# -- Note:
+
+    render_note()
+
 #######################
 # Main Page
 
-# -- Top Progress Bar:
+# -- Top User Information Display:
 
-completion_rate = user.get_completion_rate()
-st.markdown(f"#### Completion Rate: {completion_rate}%")
-st.progress(int(completion_rate))
+col1, col2, col3 = st.columns([1, 1, 1])
 
-# -- Side Metrics:
+with col1:
+    st.markdown(f"""
+        # 👋 Hi {user.user_name if user.user_name else "Student"}!
+        ### 🎯 Here's your Graduation Report:
+    """)
+
+# -- Top Progress Donut:
+
+completion_rate = user.snapshot.completion_rate
+completion_rate = min(completion_rate, 100)
+
+with col2:
+    st.markdown('#### Overall Academic Metrics')
+
+    render_metric_box(label='Total MCs', value=user.snapshot.total_units)
+
+    render_metric_box(label='Cumulative GPA', value=user.snapshot.cgpa)
+
+with col3:
+    render_completion_donut(
+        completion_rate=completion_rate, 
+        label=f"⏳ You are left with {user.user_year_left} year(s) to go!",
+        color_theme='blue'
+    )
+
+st.markdown("""---""")
+
+# -- Side Panel:
 col1, col2 = st.columns((1, 2), gap='medium')
 
 with col1:
+    st.markdown('#### Letter Grade Distribution')
 
-    st.markdown('#### Overall Academic Metrics')
+    grade_optimiser = GradeOptimizer(df=user.filtered_data, threshold=user.snapshot.cgpa)
+    grade_optimiser_results = grade_optimiser.run()
+    # Debug outputs
+    st.write("✅ Total Units:", grade_optimiser.total_units)
+    st.write("📚 Fixed GPA Sum:", grade_optimiser.fixed_gpa_sum)
+    st.write("📈 SIM GPA Value:", grade_optimiser.sim_gpa_value)
+    st.write("📉 Penalty Value:", grade_optimiser.penalty_value)
+    st.write("🎯 CGPA:", grade_optimiser.cgpa_value)
 
-    plot_metric_box(label='Total MCs', value=user.get_total_MCs())
+    if grade_optimiser_results is not None:
+        grade_optimiser_grades_list = grade_optimiser_results['selected_letters']
+        st.write(grade_optimiser_grades_list)
+    else:
+        st.warning("No feasible grade combination found to meet the CGPA threshold.")
 
-    plot_metric_box(label='Cumulative GPA', value=user.get_cgpa())
+    actual_counts = user.snapshot.grade_distribution
+    target_counts = dict(Counter(grade_optimiser_grades_list) + Counter(actual_counts))
 
-    grade_counts = user.get_filtered_data()['Grade'].value_counts().reset_index()
-    grade_counts.columns = ['Grade', 'Count']
-    fig = px.pie(
-        grade_counts, 
-        names='Grade', 
-        values='Count', 
-        hole=0.4,
-        title="Grade Distribution"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-st.markdown("""---""")
+    render_grade_chart(actual_counts=actual_counts, target_counts=target_counts)
 
 # -- Middle Panel:
 with col2:
@@ -270,49 +334,31 @@ with col2:
 
     with table_col1:
 
-        data = user.get_filtered_data()
+        completion_status, remaining_status = user.snapshot.track_completion_df, user.snapshot.track_remaining
 
-        main_track = st.selectbox('Select your Main Specialisation', options=data['Module_Type'].unique())
-
-        user.set_main_track(main_track)
-
-        st.dataframe(user.get_individual_track_progress(),
-                    column_order=('Module_Type', 'Completion_Rate'),
-                    hide_index=True,
-                    width=None,
-                    column_config={
-                        "Module_Type": st.column_config.TextColumn("Module Type"),
-                        "Units": st.column_config.NumberColumn("Units", format="%d"),
-                        "Completion_Rate": st.column_config.ProgressColumn(
-                            "Completion Rate",
-                            format="%f",
-                            min_value=0,
-                            max_value=100
-                        )}
-                    )
-        st.markdown(
-        """
-        <div style="
-            background-color: #e8f4fd;
-            border-left: 6px solid #2196F3;
-            padding: 0.5rem;
-            margin-top: 0.15rem;
-            margin-bottom: 0.15rem;
-            border-radius: 0.5rem;
-            font-size: 0.95rem;
-            color: #1a1a1a;
-        ">
-            <strong>📘 Note:</strong> Tracks that are not CORE, GE, HONS or Main Specialisation will count to UEs!
-        </div>
-        """,
-        unsafe_allow_html=True
-        )
+        render_completion_table(completion_status)
 
     with table_col2:
-        for track, messages in user.get_outstanding_modules():
-            st.markdown(f"**{track}:**")
-            for msg in messages:
-                st.markdown(f"- {msg}")
+        for track, status in remaining_status:
+            if status:
+                with st.expander(f"📘 {track} - Click to view outstanding requirements"):
+                    st.markdown(
+                        f"""
+                        <div style="
+                            background-color: #f0f8ff;
+                            border-left: 6px solid #007acc;
+                            padding: 0.75rem 1rem;
+                            margin-bottom: 0.5rem;
+                            border-radius: 0.5rem;
+                            font-size: 0.95rem;
+                            color: #1a1a1a;
+                        ">
+                            <strong style="color:#007acc;">🔍 Outstanding Requirements:</strong><br>
+                            You have <em>{', '.join(str(s) for s in status)}</em> to complete!
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
 
 #######################
 # Hide Streamlit Style
