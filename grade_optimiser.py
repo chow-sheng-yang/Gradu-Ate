@@ -19,14 +19,11 @@ class GradeOptimizer:
         self._letter_grades = list(self._grade_mapping.keys())
         self._gpa_grades = list(self._grade_mapping.values())
         self._num_grades = len(self._letter_grades)
-        self.penalties = [3, 3, 2.5, 2, 1.5, 1, 0.8, 0.6, 0.4, 0.2, 0]  # length must match num_grades
+        self.penalties = [3, 3, 2.5, 2, 1.5, 1, 0.8, 0.6, 0.4, 0.2, 0, 0]  # length must match num_grades
 
         # --- Clean DataFrame ---
         self.df = self.df[~self.df['Module_Code'].isin(self.sim_modules)]  # remove SIM modules
         self.df = self.df[self.df['Grade'] != 'S']  # remove S/U grades
-
-        # map GPA values
-        self.df['GPA'] = self.df['Grade'].map(self._grade_mapping)
 
     def run(self):
         if self.df.empty:
