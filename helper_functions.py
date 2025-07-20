@@ -1,4 +1,7 @@
 import json
+from decimal import Decimal, ROUND_HALF_UP
+import numpy as np
+import pandas as pd
 
 with open('track_requirements.json') as f:
     track_requirements = json.load(f)
@@ -18,7 +21,8 @@ def get_grade_mapping():
             "C" : 2,
             "D+" : 1.5,
             "D" : 1,
-            "F" : 0
+            "F" : 0,
+            "S" : 0
         }
     return grade_point_mapping
 
@@ -35,3 +39,12 @@ def get_track_requirements(track:str, type=None):
         return 40
     else:
         return track_requirements[track][type]
+
+def compute_cgpa(df):
+    df = df[~(df['Grade'] == "S")]
+    df = df.drop_duplicates(subset='Module_Code', keep='first')
+    cgpa = np.sum(df['GPA'] * df['Units']) / sum(df['Units'])
+    return cgpa
+
+def round_half_up(series, decimals=2):
+    return series.apply(lambda x: float(Decimal(str(x)).quantize(Decimal('1.' + '0'*decimals), rounding=ROUND_HALF_UP)))

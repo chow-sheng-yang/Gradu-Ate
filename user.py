@@ -12,6 +12,8 @@ class UserProgressSnapshot:
     total_units: int
     completion_rate: float
     cgpa: float
+    current_year : int
+    SU_used : int
     grade_distribution: dict
     track_completion_df: pd.DataFrame
     track_remaining: dict
@@ -22,16 +24,13 @@ class UserProgressSnapshot:
 
 class User:
 
-    def __init__(self, user_name, user_year, user_faculty, raw_data):
-
-        self.user_name = user_name
-        self.user_year = user_year
-        self.user_faculty = user_faculty
-        self.user_year_left = 4 - int(user_year)
+    def __init__(self, raw_data):
 
         self.raw_data = raw_data
         self.filtered_data = raw_data
+        self.all_tracks = self.raw_data['Module_Type'].unique()
         self.main_track = None
+        self.double_counted_mods = None
         self.snapshot = None # stores user computed metrics below
     
     def _generate_snapshot(self):
@@ -39,7 +38,14 @@ class User:
         total_units = self.compute_total_MCs(filtered)
         cgpa = self.compute_cgpa(filtered)
         completion_rate = self.compute_completion_rate(filtered)
+        current_year = self.compute_current_year(filtered)
+        SU_used = self.compute_SU_used(filtered)
+
+        grades = list(get_grade_mapping().keys())
+        full_grade_dist = {grade : 0 for grade in grades}
         grade_dist = filtered['Grade'].value_counts().to_dict()
+        full_grade_dist.update(grade_dist)
+        
         track_completion_df, track_remaining = self.compute_individual_track_progress(filtered)
 
         return UserProgressSnapshot(
@@ -47,25 +53,34 @@ class User:
             total_units=total_units,
             completion_rate=completion_rate,
             cgpa=cgpa,
-            grade_distribution=grade_dist,
+            current_year = current_year,
+            SU_used = SU_used,
+            grade_distribution=full_grade_dist,
             track_completion_df=track_completion_df,
             track_remaining=track_remaining
         )
 
     def apply_filter(self, selected_tracks):
         if selected_tracks:
-            self.filtered_data = self.raw_data[self.raw_data['Module_Type'].isin(selected_tracks)]
+            unselected_tracks = set(self.all_tracks) - set(selected_tracks)
+            unselected_mods = set(self.raw_data[self.raw_data['Module_Type'].isin(unselected_tracks)]['Module_Code'])
+            self.filtered_data = self.raw_data[~(self.raw_data['Module_Code'].isin(unselected_mods))]
+
         else:
             self.filtered_data = None
         self.snapshot = self._generate_snapshot()
 
     def set_main_track(self, main_track):
         self.main_track = main_track
+    
+    def set_double_counts(self, dc_modules):
+        self.double_counted_mods = list(dc_modules)
 
     def get_filtered_data(self):
         return self.filtered_data
     
     def compute_total_MCs(self, data):
+        data = data.drop_duplicates(subset='Module_Code', keep='first')
         return int(data['Units'].sum()) 
     
     def compute_completion_rate(self, data):
@@ -76,10 +91,14 @@ class User:
     def compute_cgpa(self, data):
         data = data[~(data['Grade'] == "S")]
         data = data.drop_duplicates(subset='Module_Code', keep='first')
-        grade_point_vector = data['Grade'].apply(grade_point_mapper)
-        units_vector = data['Units']
-        cgpa = round(np.sum(grade_point_vector * units_vector) / sum(units_vector), 2)
+        cgpa = round(np.sum(data['GPA'] * data['Units']) / sum(data['Units']), 2)
         return cgpa
+    
+    def compute_current_year(self, data):
+        return max(data['Year'].astype(int))
+    
+    def compute_SU_used(self, data):
+        return int(data[data['Grade'] == 'S'].shape[0])
 
     def compute_individual_track_progress(self, data):
 
