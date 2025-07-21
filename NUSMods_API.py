@@ -82,6 +82,3 @@ def get_module_description(moduleCode, acadYear="2024-2025"):
         description = raw.get("description")
         return description
     
-
-res = get_module_description("DBA3701")
-print(res)

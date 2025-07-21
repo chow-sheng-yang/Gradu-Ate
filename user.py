@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
-from helper_functions import *
+from utils import *
 from dataclasses import dataclass
+import streamlit as st
 
 #######################
 # UserProgression Class
@@ -12,12 +13,11 @@ class UserProgressSnapshot:
     total_units: int
     completion_rate: float
     cgpa: float
+    prev_cgpa: float
     current_year : int
     SU_used : int
     grade_distribution: dict
-    track_completion_df: pd.DataFrame
-    track_remaining: dict
-
+    track_status: pd.DataFrame
 
 #######################
 # User Class
@@ -30,10 +30,9 @@ class User:
         self.filtered_data = raw_data
         self.all_tracks = self.raw_data['Module_Type'].unique()
         self.main_track = None
-        self.double_counted_mods = None
         self.snapshot = None # stores user computed metrics below
-    
-    def _generate_snapshot(self):
+
+    def _generate_snapshot(self, prev_cgpa=0):
         filtered = self.filtered_data.copy()
         total_units = self.compute_total_MCs(filtered)
         cgpa = self.compute_cgpa(filtered)
@@ -46,21 +45,22 @@ class User:
         grade_dist = filtered['Grade'].value_counts().to_dict()
         full_grade_dist.update(grade_dist)
         
-        track_completion_df, track_remaining = self.compute_individual_track_progress(filtered)
+        track_status = self.compute_individual_track_progress(filtered)
 
         return UserProgressSnapshot(
             filtered_data=filtered,
             total_units=total_units,
             completion_rate=completion_rate,
             cgpa=cgpa,
+            prev_cgpa=prev_cgpa,
             current_year = current_year,
             SU_used = SU_used,
             grade_distribution=full_grade_dist,
-            track_completion_df=track_completion_df,
-            track_remaining=track_remaining
+            track_status=track_status
         )
 
     def apply_filter(self, selected_tracks):
+        prev_cgpa = self.snapshot.cgpa if self.snapshot else 0
         if selected_tracks:
             unselected_tracks = set(self.all_tracks) - set(selected_tracks)
             unselected_mods = set(self.raw_data[self.raw_data['Module_Type'].isin(unselected_tracks)]['Module_Code'])
@@ -68,13 +68,10 @@ class User:
 
         else:
             self.filtered_data = None
-        self.snapshot = self._generate_snapshot()
+        self.snapshot = self._generate_snapshot(prev_cgpa=prev_cgpa)
 
     def set_main_track(self, main_track):
         self.main_track = main_track
-    
-    def set_double_counts(self, dc_modules):
-        self.double_counted_mods = list(dc_modules)
 
     def get_filtered_data(self):
         return self.filtered_data
@@ -143,6 +140,9 @@ class User:
                 completion_status[track] = round((num_completed_modules / num_required_modules)*100, 2)
                 if num_remaining_modules > 0:
                     remaining_status[track] = [f"{int(num_remaining_modules)} number of {track} electives"]
+                else:
+                     remaining_status[track] = []
+
             
             elif track.startswith('BBA-') and track != 'BBA-CORE':
                     completed_modules = set(data[data['Module_Type'] == track]['Module_Code'])
@@ -163,5 +163,8 @@ class User:
                     remaining_status[track] = []
         
         completion_status = pd.DataFrame(completion_status.items(), columns=['Module_Type', 'Completion_Rate'])
+        remaining_status = pd.DataFrame(remaining_status.items(), columns=['Module_Type', 'Completion_Status'])
+        remaining_status['Completion_Status'] = remaining_status['Completion_Status'].apply(lambda x: ", ".join(x) if x else None)
+        status = pd.merge(completion_status, remaining_status, on="Module_Type")
 
-        return completion_status, remaining_status.items()
+        return status

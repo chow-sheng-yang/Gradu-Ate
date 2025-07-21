@@ -9,7 +9,7 @@
 
 /* Card */
 /* Adapted from https://startbootstrap.com/theme/sb-admin-2 */
-div.css-1r6slb0.e1tzin5v2 {
+/* div.css-1r6slb0.e1tzin5v2 {
     background-color: #FFFFFF;
     border: 1px solid #CCCCCC;
     padding: 5% 5% 5% 10%;
@@ -28,13 +28,13 @@ label.css-mkogse.e16fv1kl2 {
 
 
 /* Move block container higher */
-div.block-container.css-18e3th9.egzxvld2 {
+/*div.block-container.css-18e3th9.egzxvld2 {
   margin-top: -5em;
 }
 
 
 /* Hide hamburger menu and footer */
-div.css-r698ls.e8zbici2 {
+/*div.css-r698ls.e8zbici2 {
   display: none;
 }
 
@@ -50,3 +50,12 @@ div.vg-tooltip-element {
   display: none;
 }
 
+.card {
+  background-color: #FFFFFF;
+  border: 1px solid #CCCCCC;
+  padding: 1.25rem;
+  border-radius: 5px;
+  border-left: 0.5rem solid #9AD8E1;
+  box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+  margin-bottom: 1rem;
+}

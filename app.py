@@ -12,10 +12,15 @@ import altair as alt
 import streamlit as st
 from collections import Counter
 
-from helper_functions import *
-from grade_optimiser import GradeOptimizer
+from utils import *
 from user import User
 from statsmodels.nonparametric.smoothers_lowess import lowess
+
+
+import torch
+import torch.nn.functional as F
+import pickle
+from Embed_Modules import preprocess_text
 
 # emojis: https://www.webfx.com/tools/emoji-cheat-sheet/
 
@@ -31,6 +36,30 @@ st.set_page_config(
 with open('style.css') as f:
     st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 
+# -- Background Gradient:
+
+st.markdown("""
+    <style>
+    body {
+        background-color: #0d1b2a;  /* solid dark blue */
+    }
+
+    [data-testid="stAppViewContainer"] > .main {
+        background-color: #0d1b2a;
+        color: white;
+    }
+
+    [data-testid="stSidebar"] {
+        background-color: #0d1a2d;
+    }
+
+    .stButton > button, .stTextInput > div > div > input {
+        background-color: #102030 !important;
+        color: white;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # -- Colors:
 
 dba_hex = [to_hex(c) for c in sns.color_palette('Blues', n_colors=4)]
@@ -40,7 +69,6 @@ scm_hex = [to_hex(c) for c in sns.color_palette('Oranges', n_colors=4)]
 
 st.markdown(f"""
     <style>
-    /* Change background of selected options in multiselect */
     .stMultiSelect [data-baseweb="tag"] {{
         background-color: {dba_hex[3]} !important;
         color: white !important;
@@ -50,22 +78,41 @@ st.markdown(f"""
 
 # -- Change Side Bar Color:
 
-st.markdown(f"""
-    <style>
-        [data-testid="stSidebar"] {{
-            background-color: #2e3b4e;
-        }}
-    </style>
-    """, unsafe_allow_html=True)
-
 st.markdown("""
     <style>
-    /* Make sidebar content a flex container and center vertically */
     [data-testid="stSidebar"] > div:first-child {
-        height: 100vh;          /* Full viewport height */
+        height: 100vh;
         display: flex;
         flex-direction: column;
-        justify-content: center; /* Vertical centering */
+        justify-content: center;
+    }
+
+    [data-testid="stSidebar"] {
+        background: linear-gradient(135deg, #0d1a2d, #1e324a);
+        color: #ffffff;
+    }
+
+    [data-testid="stSidebar"] .css-1v0mbdj,
+    [data-testid="stSidebar"] .css-10trblm {
+        color: #ffffff;
+    }
+
+    [data-testid="stSidebar"] .stSelectbox label,
+    [data-testid="stSidebar"] .stMultiSelect label {
+        color: #ffffff;
+        font-weight: 600;
+    }
+
+    [data-testid="stSidebar"] .stSelectbox,
+    [data-testid="stSidebar"] .stMultiSelect {
+        background-color: #22384f;
+        border: 1px solid #00E0FF;
+        border-radius: 8px;
+    }
+
+    [data-testid="stSidebar"] ::-webkit-scrollbar-thumb {
+        background-color: #00E0FF;
+        border-radius: 8px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -78,32 +125,93 @@ def hex_to_rgba(hex, alpha=0.3):
     return f'rgba({int(rgb[0]*255)}, {int(rgb[1]*255)}, {int(rgb[2]*255)}, {alpha})'
 
 def render_note(message):
-    st.markdown(
+   st.markdown(
         f"""
         <div style="
-            background-color: {scm_hex[2]}20;
-            border-left: 6px solid #{scm_hex[2]}];
+            background-color: #0d1a2d;
+            border-left: 6px solid #df740c;
             padding: 0.5rem;
             margin-top: 0.15rem;
             margin-bottom: 0.15rem;
             border-radius: 0.5rem;
-            font-size: 0.95rem;
-            color: #1a1a1a;
+            font-size: 1.15rem;
+            color: #FFFFFF;
+            font-family: 'Arial', sans-serif;
         ">
-            <strong style="color:#f57f17;">⚠️ Note:</strong> {message}
+            <strong>⚠️ Note:</strong> {message}
         </div>
         """,
         unsafe_allow_html=True
     )
-        
-def render_metric_box(label, value:int, gradient_angle="135"):
+   
+def render_CGPA_box(label, value:int):
+    delta = round(user.snapshot.cgpa - user.snapshot.prev_cgpa, 2)
+
+    # Determine delta sign and color
+    if delta > 0:
+        delta_symbol = '▲'
+        delta_color = '#00FF88'  # green
+        delta_msg = f"by {abs(delta)} from {user.snapshot.prev_cgpa}" 
+    elif delta < 0:
+        delta_symbol = '▼'
+        delta_color = '#FF5555'  # red
+        delta_msg = f"by {abs(delta)} from {user.snapshot.prev_cgpa}" 
+    else:
+        delta_symbol = ''
+        delta_color = '#FFFFFF'  # neutral white if needed
+        delta_msg = f"No change from {user.snapshot.prev_cgpa}" 
+    
+    delta_display = f"{delta_symbol} | {delta_msg}"
+
+    st.markdown(
+        f"""
+        <div style="
+            background: rgba(13,26,45,0.98);
+            border-radius: 0rem;
+            width: 400px;
+            height: 260px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-family: 'Arial', sans-serif;
+            margin-bottom: 1rem;
+            border: 3px solid #df740c;
+            box-shadow: 0 0 12px #df740c88;
+        ">
+            <div style="
+                font-size: 1.2rem; 
+                color: #df740c; 
+                font-weight: 400;
+                text-shadow: 0 0 6px #df740cbb;
+            ">{label}</div>
+            <div style="
+                font-size: 4rem; 
+                font-weight: 500; 
+                color: #df740c; 
+                margin: 0.5rem 0;
+                text-shadow: 0 0 8px #df740ccc;
+            ">{value}</div>
+            <div style="
+                font-size: 1.25rem; 
+                font-weight: 400; 
+                color: {delta_color};
+                text-shadow: 0 0 6px {delta_color}88;
+            ">{delta_display}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def render_metric_box(label, value:int):
     delta = +4
     st.markdown(
         f"""
         <div style="
-            background: linear-gradient({gradient_angle}deg, #cc5500, #e77a70);
-            border-radius: 1rem;
-            width: 300px;
+            background: rgba(13,26,45,0.98);
+            border-radius: 0rem;
+            width: 400px;
             height: 260px;
             display: flex;
             flex-direction: column;
@@ -113,9 +221,9 @@ def render_metric_box(label, value:int, gradient_angle="135"):
             font-family: 'Arial', sans-serif;
             margin-bottom: 1rem;
         ">
-            <div style="font-size: 1.50rem; color: #FFFFFF; font-weight: 600;">{label}</div>
+            <div style="font-size: 1.2rem; color: #dddddd; font-weight: 400;">{label}</div>
             <div style="font-size: 4rem; font-weight: 500; color: #FFFFFF; margin: 0.5rem 0;">{value}</div>
-            <div style="font-size: 1.25rem; font-weight: 400; color: #00FF00;">
+            <div style="font-size: 1.25rem; font-weight: 400; color: #00E0FF;">
                 {'▲' if delta > 0 else '▼' if delta < 0 else ''} {abs(delta) if delta != 0 else ''}
             </div>
         </div>
@@ -123,123 +231,69 @@ def render_metric_box(label, value:int, gradient_angle="135"):
         unsafe_allow_html=True
     )
 
-def render_st_white_card(label):
-    st.markdown(f"""
-    <div style="
-        margin-bottom: 1rem;
-        padding: 0.75rem 1rem;
-        background: #fff;
-        border-radius: 0.5rem;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        font-size: 1.25rem;
-        color: #2a2a2a;
-    ">
-        {label}
-    </div>
-    """, unsafe_allow_html=True)
+def render_degree_completion(completion_rate, label):
+
+    fig = go.Figure(data=[go.Pie(
+        values=[completion_rate, 100 - completion_rate],
+        labels=['Completed', 'Remaining'],
+        hole=0.80,
+        marker=dict(colors=['#7DFDFE', '#df740c']),
+        textinfo='none',
+        domain=dict(x=[0.1, 0.9], y=[0.1, 0.9])
+    )])
+
+    fig.update_layout(
+        showlegend=False,
+        height=260,
+        width=200,
+        margin=dict(t=0, b=0, l=0, r=0),
+        annotations=[dict(
+            text=f"<b>{completion_rate:.0f}%</b>",
+            x=0.5, y=0.5,
+            font_size=50,
+            showarrow=False,
+            font_color="white"
+        )],
+        paper_bgcolor="#0d1a2d",
+        plot_bgcolor="#0d1a2d"
+    )
+
+    st.plotly_chart(fig)
 
 def render_completion_table(df):
 
-    for _, row in df.iterrows():
-        module = row['Module_Type']
-        rate = row['Completion_Rate']
-
-        st.markdown(f"""
-        <div style="
-            margin-bottom: 1rem;
-            padding: 0.75rem 1rem;
-            background: #14243b;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 0.5rem;
-            box-shadow: 0 2px 10px rgba(255,255,255,0.05);
-        ">
-            <strong style="color: #FFFFFF; font-size: 1.5rem;">{module}</strong>
-            <div style="
-                margin-top: 0.4rem;
-                height: 16px;
-                background: #333333;
-                border-radius: 999px;
-                overflow: hidden;
-            ">
-                <div style="
-                    width: {rate}%;
-                    height: 100%;
-                    background: linear-gradient(90deg, {dba_hex[3]}, {scm_hex[3]});
-                    transition: width 1s ease-in-out;
-                "></div>
-            </div>
-            <p style="margin: 0.25rem 0 0; font-size: 0.85rem; color: #DDDDDD;">
-                {rate:.2f}%
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-
-def render_spider_chart(df):
-
-    categories = df['Module_Type'].tolist()
-    values = df['avg_GPA'].tolist()
-
-    values += values[:1]
-    categories += categories[:1]
-
-    fig = go.Figure(
-        data=[
-            go.Scatterpolar(
-                r=values,
-                theta=categories,
-                fill='toself',
-                name='Average GPA',
-                line=dict(color=scm_hex[2], width=2),
-                fillcolor=hex_to_rgba(dba_hex[3], alpha=0.3)
-            )
-        ],
-        layout=go.Layout(
-            polar=dict(
-                bgcolor='#0d1b2a',  # darker radial background
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, 5],
-                    tickfont=dict(size=20, color='#FFFFFF'),
-                    gridcolor='#444444',         # optional: dim gridlines
-                    linecolor='#888888'          # optional: dim axis line
-                ),
-                angularaxis=dict(
-                    tickfont=dict(size=16, color='#FFFFFF'),
-                    gridcolor='#444444'
-                )
-            ),
-            showlegend=False,
-            width=400,
-            height=400,
-            margin=dict(l=20, r=20, t=20, b=20),
-            paper_bgcolor='rgba(13, 27, 42, 1)',   # transparent outer background
-            plot_bgcolor='rgba(13, 27, 42, 1)'
-        )
-    )
-
-    st.markdown("""
-        <h3 style='font-size: 38px; font-weight: 600; color: #FFFFFF; margin-bottom: 1rem;'>
-            Grade Distribution by Track
-        </h3>
-        """, unsafe_allow_html=True
-        )
-
-    st.plotly_chart(fig, use_container_width=True)
-
+    st.dataframe(df,
+                 column_order=("Module_Type", "Completion_Rate", "Completion_Status"),
+                 hide_index=True,
+                 width=None,
+                 height=500,
+                 column_config={
+                    "Module_Type": st.column_config.TextColumn(
+                        "Track",
+                    ),
+                    "Completion_Rate": st.column_config.ProgressColumn(
+                        "Completion Rate",
+                        format="%f",
+                        min_value=0,
+                        max_value=max(df['Completion_Rate']),
+                     ),
+                     "Completion_Status": st.column_config.TextColumn(
+                        "What You Need To Complete",
+                    )}
+                 )
+    
 def render_bar_chart(df):
 
     df = df.sort_values(by='avg_GPA', ascending=True)
 
-    # Plotly gradient bar simulation
     fig = go.Figure()
 
     fig.add_trace(go.Bar(
-    x=df['avg_GPA'],
-    y=df['Module_Type'],
-    orientation='h',
+    x=df['Module_Type'],
+    y=df['avg_GPA'],
     marker=dict(
-        color='rgba(0,123,255,0.7)',
-        line=dict(color='rgba(0,123,255,1.0)', width=1.5)
+        color='#df740c',
+        line=dict(color='#df740c', width=1.5)
     ),
     text=df['avg_GPA'].round(2),
     textposition='outside',
@@ -249,76 +303,21 @@ def render_bar_chart(df):
     fig.update_layout(
         title=dict(
             text="GPA Distribution by Track",
-            font=dict(size=40, color="white"),
+            font=dict(size=25, color="#FFFFFF", family="Arial, sans-serif"),
             x=0.5,
             xanchor='center'
         ),
-        xaxis=dict(title='Average GPA', range=[min(df['avg_GPA'])-0.05, 5.0], tickfont=dict(size=14)),
-        yaxis=dict(title='Track', tickfont=dict(size=14)),
+        xaxis=dict(title='Track', tickfont=dict(size=14, color="#FFFFFF")),
+        yaxis=dict(title='Average GPA', range=[min(df['avg_GPA'])-0.05, 5.0], tickfont=dict(size=14, color="#FFFFFF")),
         height=500,
         margin=dict(l=60, r=40, t=120, b=40),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor=hex_to_rgba('#14243b', 0.98),
+        plot_bgcolor='#0d1a2d',
+        paper_bgcolor='#0d1a2d',
         showlegend=False,
         bargap=0.5
     )
 
     st.plotly_chart(fig, use_container_width=True)
-    
-def render_completion_donut(completion_rate, label):
-
-    chart_color = [dba_hex[3], dba_hex[1]]
-
-    # Data
-    source = pd.DataFrame({
-        "Label": ['', label],
-        "Value": [100 - completion_rate, completion_rate]
-    })
-    source_bg = pd.DataFrame({
-        "Label": ['', label],
-        "Value": [100, 0]
-    })
-
-    # Chart
-    plot_bg = alt.Chart(source_bg).mark_arc(innerRadius=80, cornerRadius=15).encode(
-        theta="Value:Q",
-        color=alt.Color("Label:N",
-                        scale=alt.Scale(domain=[label, ''], range=chart_color),
-                        legend=None)
-    ).properties(width=260, height=260)
-
-    plot = alt.Chart(source).mark_arc(innerRadius=80, cornerRadius=15).encode(
-        theta="Value:Q",
-        color=alt.Color("Label:N",
-                        scale=alt.Scale(domain=[label, ''], range=chart_color),
-                        legend=None)
-    ).properties(width=260, height=260)
-
-    text = alt.Chart(pd.DataFrame({'text': [f"{completion_rate:.1f}%"]})).mark_text(
-        font="sans-serif",
-        fontSize=28,
-        fontWeight="bold",
-        color="#FFFFFF"
-    ).encode(text='text:N')
-    donut_chart = plot_bg + plot + text
-
-    st.markdown(f"""
-    <div style="
-        background-color: white;
-        padding: 1.25rem;
-        border-radius: 0.5rem;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        margin-bottom: 1rem;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-    ">
-        <strong style="color: #2a2a2a; font-size: 1.05rem;">{label}</strong>
-    """, unsafe_allow_html=True)
-
-    st.altair_chart(donut_chart, use_container_width=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)
     
 def render_waterfall_chart(df):
 
@@ -355,60 +354,118 @@ def render_waterfall_chart(df):
 
     fig = go.Figure()
 
-   # ==== Waterfall Chart ====
-    fig.add_trace(go.Waterfall(
-        x=plot_df['Term'],
-        y=plot_df['CGPA_Delta'],
-        measure=plot_df['Measure'],
-        connector={"line": {"color": "rgba(63, 63, 63, 0.5)"}},
-        text=plot_df['CGPA_Delta'].map("{:.2f}".format),
-        textposition="outside",
-        textfont=dict(size=16, family='Arial'),
-        increasing=dict(marker=dict(color=dba_hex[3])),   # for increases
-        decreasing=dict(marker=dict(color=scm_hex[3])),   # for decreases
-        totals=dict(marker=dict(color=dba_hex[3]))
-    ))
-
     fig.add_trace(go.Scatter(
-    x=plot_df['Term'],
-    y=plot_df['CGPA'],
-    mode='lines',
-    line=dict(color='rgba(0,123,255,1)', width=3, shape='spline'),
-    name='CGPA Trend'
+        x=plot_df['Term'],
+        y=plot_df['CGPA'],
+        mode='lines+markers',
+        line=dict(color='#df740c', width=3, shape='spline'),
+        marker=dict(size=8, color='#df740c'),
+        name='CGPA Trend'
     ))
 
-    # Add layered fills to simulate vertical gradient
-    for i, alpha in enumerate([0.20, 0.17, 0.14, 0.11, 0.08, 0.05, 0.03, 0.01, 0.008, 0.006, 0.004, 0.002, 0.001]):
-        y_offset = plot_df['CGPA'] - (i + 1) * 0.04  # Each layer slightly below the previous
+    # Vertical gradient fill layers below line
+    for i, alpha in enumerate([
+        0.20, 0.17, 0.14, 0.115, 0.09, 0.07, 0.055, 0.045,
+        0.035, 0.027, 0.02, 0.015, 0.011, 0.008, 0.005, 0.003,
+        0.0015, 0.0008, 0.0003, 0.0
+    ]):
+        y_offset = plot_df['CGPA'] - (i + 1) * 0.04
         fig.add_trace(go.Scatter(
             x=plot_df['Term'],
             y=y_offset,
             mode='lines',
             line=dict(width=0),
             fill='tonexty',
-            fillcolor=f'rgba(0,123,255,{alpha})',
+            fillcolor=f'rgba(223,116,12,{alpha})',
             hoverinfo='skip',
             showlegend=False
         ))
-    # ==== Layout ====
+
+    # Add delta annotations
+    for i, (x, delta) in enumerate(zip(plot_df['Term'], plot_df['CGPA_Delta'])):
+        fig.add_annotation(
+            x=x,
+            y=plot_df['CGPA'].iloc[i] + 0.03,  # position above point
+            text=f"{delta:+.2f}",
+            showarrow=False,
+            font=dict(size=20, color="white", family='Courier New'),
+            borderwidth=1,
+            borderpad=4
+        )
+
     fig.update_layout(
         title=dict(
             text="CGPA Change Over Semesters",
-            font=dict(size=40, color="white"),
+            font=dict(size=25, color="#FFFFFF", family="Arial, sans-serif"),
             x=0.5,
             xanchor='center'
         ),
         yaxis_title="CGPA",
         plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor=hex_to_rgba('#14243b', 0.98),
-        xaxis=dict(showgrid=False, tickfont=dict(size=20)),
-        yaxis=dict(range=[3.9, 4.8], showgrid=False, tickfont=dict(size=20)),
+        paper_bgcolor='rgba(13,26,45,0.98)',
+        xaxis=dict(showgrid=False, tickfont=dict(size=20, color="#FFFFFF")),
+        yaxis=dict(range=[min(cgpa_vector)-0.2, max(cgpa_vector)+0.2], showgrid=False, tickfont=dict(size=20, color="#FFFFFF")),
         height=500,
         margin=dict(l=40, r=40, t=120, b=40),
         showlegend=True
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+def render_treemap(df):
+
+    fig = go.Figure(go.Treemap(
+        labels=df['Module_Code'],
+        values=df['TFIDF_Sim'],
+        parents=[""] * len(df),
+        textinfo="label",
+        textfont=dict(size=20, color='white'),
+        marker=dict(
+            colors=df['TFIDF_Sim'],
+            colorscale=[[0, '#DF740C'], [1, '#EE0000']],
+            line=dict(width=1, color="#FFA500"),
+            showscale=True
+        ),
+        root=dict(color='rgba(20,36,59,0.98)')
+    ))
+
+    fig.update_layout(
+        title=dict(
+            text="Recommended Modules",
+            font=dict(size=25, color="#FFFFFF", family="Arial, sans-serif"),
+            x=0.5,
+            xanchor='center'
+        ),
+        height=900,
+        plot_bgcolor='rgba(13,26,45,0.98)',
+        paper_bgcolor='rgba(13,26,45,0.98)',
+        margin=dict(t=80, l=40, r=40, b=40)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+def recommend_modules(user_input, k=10):
+
+    if not isinstance(user_input, str):
+        return None
+    
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    with open('course_descriptions.pkl', 'rb') as f:
+        course_descriptions = pickle.load(f)
+
+    tfidf_vectorizer = TfidfVectorizer()
+    tfidf_matrix = tfidf_vectorizer.fit_transform(course_descriptions['Module_Description'])
+
+    user_input = preprocess_text(user_input)
+    user_vec = tfidf_vectorizer.transform([user_input])
+    tfidf_sims = cosine_similarity(tfidf_matrix, user_vec).flatten()
+
+    course_descriptions['TFIDF_Sim'] = tfidf_sims
+    top_k_matches = course_descriptions.sort_values(by='TFIDF_Sim', ascending=False).head(10)
+
+    return top_k_matches
 
 #######################
 # Reading Data
@@ -450,7 +507,6 @@ with st.sidebar:
         }).reset_index()
 
         df_not_year_long = df[~df['Module_Code'].isin(year_long_mods)]
-        # df_no_dup = df_not_year_long.drop_duplicates(subset='Module_Code', keep='first')
 
         df = pd.concat([df_year_long, df_not_year_long], ignore_index=True)
 
@@ -460,7 +516,10 @@ with st.sidebar:
 
 # -- User Configuration:
 
-    user = User(raw_data=df)
+    if "user" not in st.session_state:
+        st.session_state.user = User(raw_data=df)
+
+    user = st.session_state.user
 
 # -- Select Tracks:
 
@@ -478,27 +537,16 @@ with st.sidebar:
                               (track != "BBA-HONS")]
     main_track = st.selectbox('Select your main track/specialisation:', 
                             options=specialisation_options)
-    
-# # -- Select Double-Counted Modules:
-#     double_counted_options = set([module for module in df['Module_Code'] if \
-#                               (df[df['Module_Code'] == module].shape[0] > 1) and \
-#                               (df[df['Module_Code'] == module]['Units'].sum() > 4)])
-#     double_counted_mods = st.multiselect('Select the Modules you are Double-Counting::', 
-#                             options=double_counted_options,
-#                             default=None)
-
 
 # -- Input Text Message for Module Recommendation:
     
-    modrec_input = st.text_input("Based on your Main Specialisation, describe areas of interest for Module Recommendation:")
-    
-
-
+    modrec_input = st.text_area("Based on your Main Specialisation, describe areas of interest for Module Recommendation:",
+                                 value='e.g I am interested in Marketing, Consumer Behaviour, Consumer Research',
+                                 height=150)
 
 # -- Filtering Process:
 
     user.set_main_track(main_track)
-    # user.set_double_counts(double_counted_mods)
     user.apply_filter(selected_tracks)
 
     if user.get_filtered_data() is None or user.get_filtered_data().empty:
@@ -513,97 +561,59 @@ with st.sidebar:
 #######################
 # Main Page
 
-top_col1, top_col2 = st.columns([2, 1], gap='medium')
-
 # -- Top Metrics:
 
 completion_rate = user.snapshot.completion_rate
 completion_rate = min(completion_rate, 100)
 
-with top_col1:
-    st.markdown("""
-        <h3 style='font-size: 38px; font-weight: 600; color: #FFFFFF; margin-bottom: 1rem;'>
-           Overall Academic Metrics
-        </h3>
-        """, unsafe_allow_html=True
-        )
-    box1, box2, box3, box4 = st.columns(4, gap='small')
-    with box1:
-        render_metric_box(label='Total MCs', value=user.snapshot.total_units, gradient_angle=135)
-    with box2:
-        render_metric_box(label='Cumulative GPA', value=user.snapshot.cgpa, gradient_angle=120)
-    with box3:
-        render_metric_box(label='Remaining S/Us', value= (32 - (user.snapshot.SU_used * 4)), gradient_angle=150)
-    with box4:
-        render_metric_box(label='Year of Study', value= user.snapshot.current_year, gradient_angle=160)
+box1, box2, box3, box4, box5 = st.columns(5, gap='small')
 
-with top_col2:
-        render_completion_donut(
-            completion_rate=completion_rate, 
-            label=f"⏳ You are left with {4 - user.snapshot.current_year} year(s) to go!",
-    )
+with box1:
+    render_metric_box(label='Total MCs', value=user.snapshot.total_units)
+with box2:
+    render_CGPA_box(label='Cumulative GPA', value=user.snapshot.cgpa)
+with box3:
+    render_metric_box(label='Remaining S/Us', value= (32 - (user.snapshot.SU_used * 4)))
+with box4:
+    render_metric_box(label='Year of Study', value= user.snapshot.current_year)
+with box5:
+    render_degree_completion(
+        completion_rate=completion_rate, 
+        label=f"⏳ You are left with {4 - user.snapshot.current_year} year(s) to go!",
+)
 
 st.markdown("""---""")
 
 # -- Bottom Side Panel:
-col1, col2 = st.columns((0.25, 0.75), gap='medium')
+col1, col2 = st.columns((0.75, 0.25), gap='medium')
 
 with col1:
 
-    st.markdown("""
-        <h3 style='font-size: 38px; font-weight: 600; color: #FFFFFF; margin-bottom: 1rem;'>
-           Individual Track Analysis
-        </h3>
-        """, unsafe_allow_html=True
-    )
-    completion_status, remaining_status = user.snapshot.track_completion_df, user.snapshot.track_remaining
-    render_completion_table(completion_status)
-    for track, status in remaining_status:
-            if status:
-                with st.expander(f"📘 {track} - Click to view outstanding requirements"):
-                    st.markdown(
-                        f"""
-                        <div style="
-                            background-color: #FFFFFF;
-                            border-left: 6px solid #007acc;
-                            padding: 0.75rem 1rem;
-                            margin-bottom: 0.5rem;
-                            border-radius: 0.5rem;
-                            font-size: 0.95rem;
-                            color: #1a1a1a;
-                        ">
-                            <strong style="color:#007acc;">🔍 Outstanding Requirements:</strong><br>
-                            You have <em>{', '.join(str(s) for s in status)}</em> to complete!
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+    render_waterfall_chart(df=user.filtered_data)
+
+    col3, col4 = st.columns((1, 1), gap='medium')
+    
+    with col3: 
+        track_status = user.snapshot.track_status
+        render_completion_table(track_status)
+
+    with col4:
+        track_gpas = user.filtered_data.groupby('Module_Type').agg(avg_GPA=('GPA', np.mean)).reset_index()
+        render_bar_chart(track_gpas)
 
 # -- Bottom Middle Panel:
 
 with col2:
 
-    table_col1, table_col2 = st.columns(2)
-
-    with table_col1:
-       
-       st.markdown("""
-        <h3 style='font-size: 38px; font-weight: 600; color: #FFFFFF; margin-bottom: 1rem;'>
-            Grades Analysis
-        </h3>
-        """, unsafe_allow_html=True
-    )
-       
-       render_waterfall_chart(df=user.filtered_data)
-
-       track_gpas = user.filtered_data.groupby('Module_Type').agg(avg_GPA=('GPA', np.mean)).reset_index()
-       render_bar_chart(track_gpas)
-
-# -- Bottom Right Panel:
-
-    with table_col2:
-        pass
-        
+    if modrec_input:
+        res = recommend_modules(user_input=modrec_input)
+        render_treemap(res)
+        note = (
+            "These module recommendations are generated by the algorithm to the best of its ability. "
+            "I encourage you to also review your preferences on "
+            '<a href="https://nusmods.com/courses?sem[0]=1&sem[1]=2&sem[2]=3&sem[3]=4" target="_blank" style="color:#FFD700;">NUSMods</a>!'
+        )
+        render_note(note)
 
 st.markdown("""---""")
 
