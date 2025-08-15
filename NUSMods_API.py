@@ -1,7 +1,10 @@
 import requests
 
-''' function to fetch raw data from NUSMods API '''
-''' documentation: https://api.nusmods.com/v2/#/'''
+'''
+    1) This script interacts with NUSMods API;
+    2) Documentation: https://api.nusmods.com/v2/#/
+    3) This script is imported as a module.
+'''
 
 def fetch_nusmods_data(endpoint, acadYear, moduleCode=None, semester=None):
     """
