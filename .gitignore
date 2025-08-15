@@ -8,3 +8,5 @@ __pycache__/user.cpython-311.pyc
 __pycache__/utils.cpython-311.pyc
 ~$sample_data_2.xlsx
 data/~$sample_data.xlsx
+__pycache__/theme.cpython-311.pyc
+__pycache__/course_description_from_API.cpython-311.pyc
