@@ -2,7 +2,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 from utils import *
 
-
 '''
     1) This script initializes the color themes and styling methods for the app;
     2) This script is imported as a module.

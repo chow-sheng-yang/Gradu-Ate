@@ -1,23 +1,12 @@
 import pandas as pd
-# import numpy as np
-
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-# import plotly.colors as pc
-# import seaborn as sns
 from matplotlib.colors import to_hex
-
 import streamlit as st
 import streamlit.components.v1 as components
-# from streamlit_option_menu import option_menu
-# from streamlit_tags import st_tags
-
 from utils import *
 from theme import *
 from user import User
-# from statsmodels.nonparametric.smoothers_lowess import lowess
-
-# from course_description_from_API import preprocess_text
 
 #######################
 # Page configuration
