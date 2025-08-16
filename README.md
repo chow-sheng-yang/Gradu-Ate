@@ -67,6 +67,10 @@ This repository also offers a variety of data sources that you’re welcome to d
 ### 6. Where to get help:
 As this is a personal project, feel free to email me at my personal email `chowshengyang.123@gmail.com` if you have any issues!
 
+### 7. Access the app:
+
+https://gradu-ate.streamlit.app/
+
 ---
 
 Thank you for checking out Gradu-Ate! 🎓  
