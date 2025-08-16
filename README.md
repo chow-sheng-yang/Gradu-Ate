@@ -70,6 +70,7 @@ As this is a personal project, feel free to email me at my personal email `chows
 ### 7. Access the app:
 
 https://gradu-ate.streamlit.app/
+> ⚠️ **Note:** You may need to zoom out to **50%** in your browser so that the app contents are not too cluttered.
 
 ---
 
