@@ -10,3 +10,5 @@ __pycache__/utils.cpython-311.pyc
 data/~$sample_data.xlsx
 __pycache__/theme.cpython-311.pyc
 __pycache__/course_description_from_API.cpython-311.pyc
+__pycache__/Recommender.cpython-311.pyc
+__pycache__/Recommender_Embeddings.cpython-311.pyc
