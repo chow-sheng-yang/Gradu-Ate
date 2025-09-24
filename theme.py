@@ -13,8 +13,8 @@ from utils import *
 class ColorPalette:
 
     def __init__(self, color_theme='Light'):
-        self.primary_chart_color = "#1b46f2"
-        self.secondary_chart_color = "#fa4202"
+        self.primary_chart_color = "#fe523a" #"#1b46f2"
+        self.secondary_chart_color = "#f3b02d" #"#fa4202"
         self.secondary_text_color = "#777777"
 
         if color_theme == 'Dark':
@@ -98,7 +98,7 @@ def style_download_data_button(bgcolor, textcolor, hovercolor):
             font-weight: bold !important;
             border-radius: 8px !important;
             padding: 10px 24px !important;
-            border: none !important;
+            border: 1px solid white !important; 
             cursor: pointer;
         }}
 
@@ -145,23 +145,32 @@ def style_upload_page(main_text,
         </style>
     """, unsafe_allow_html=True)
 
+    st.markdown(f"""
+        <style>
+            div[data-testid="stFileUploader"] div {{
+                background-color: {uploader_bgcolor} !important;
+                color: {uploader_fontcolor} !important;
+            }}
+        </style>
+    """, unsafe_allow_html=True)
+
     # Coloring uploader
     st.markdown(f"""
         <style>
         /* Info box (change st.info background) */
         .stAlert {{
-            background-color: #f1f3f5 !important;
-            color: #373945 !important;
+            background-color: #00000000 !important;
+            color: white !important;
             border-radius: 8px;
             font-weight: 500;
         }}
          /* Target the text inside the st.info box */
         .stAlert > div {{
-            color: #373945 !important;
+            color: white !important;
         }}
 
         .stAlert p {{
-            color: #373945 !important;
+            color: white !important;
         }}
         </style>
         """, unsafe_allow_html=True)
@@ -310,10 +319,10 @@ def style_transition_buttons():
             .stButton > button[kind], .stDownloadButton > button[kind] {{
                 padding: 24px 40px !important;
                 border-radius: 40px !important;
+                border: 1px solid white !important;
             }}
         </style>
     """, unsafe_allow_html=True)
-
 
 # -- Styles Widget Text Labels:
 

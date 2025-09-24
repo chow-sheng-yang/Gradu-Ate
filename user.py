@@ -45,6 +45,7 @@ class User:
             self.all_tracks = None
             st.error("Can't seem to find [Module_Type] column in your data.")
         self.main_major = None
+        self.career_tags = None
         self.snapshot = None # stores user computed metrics below
         self.init_cgpa =self.compute_cgpa(self.raw_data)
     

@@ -38,11 +38,20 @@ with open('./data/bba_electives_ranking.pkl', 'rb') as f:
 #-- Read Recommender Module Demand-Vacancy:
 with open('./data/bba_electives_demand_vacancy_data.pkl', 'rb') as f:
         bba_electives_demand_vacancy_data = pickle.load(f)
+
+# -- Read Career Tags and Role Descriptions:
+careers = pd.read_excel('./data/careers.xlsx')
+
+# -- Read Career Tag Embeddings:
+CE = pd.read_csv("./data/Career-Tag_embeddings.csv", index_col=0).astype("float32")
+
+# -- Read Module Description Embeddings:
+ME = pd.read_csv("./data/Module-Description_embeddings.csv", index_col=0).astype("float32")
     
 #######################
 # Helper Functions to Load App-related Data
 
-def load_bba_electives_description():
+def load_bba_electives_description(): # not cleaned yet, i.e not modules_df in Recommender_Embeddings.py
     return course_descriptions
 
 def load_bba_electives_info():
@@ -62,6 +71,15 @@ def load_demand_vacancy_data():
 
 def load_ge_requirements():
     return ge_mods
+
+def load_careers():     # not cleaned yet, i.e not careers_df in Recommender_Embeddings.py
+    return careers
+
+def load_Career_Tag_embeddings():
+    return CE
+
+def load_Module_Description_embeddings():
+    return ME
 
 #######################
 # Helper Functions
@@ -177,10 +195,11 @@ def normalize_completion_status(completion_status):
 
 # -- Converts Hex to RGBA:
 
-def hex_to_rgba(hex_color, alpha=0.3):
-    hex_color = hex_color.lstrip('#')
-    r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-    return f'rgba({r}, {g}, {b}, {alpha})'
+def hex_to_rgba(hex_color, alpha=1):
+    r = int(hex_color[1:3], 16)
+    g = int(hex_color[3:5], 16)
+    b = int(hex_color[5:7], 16)
+    return f"rgba({r},{g},{b},{alpha})"
 
 # -- Converts RGBA to Hex:
 

@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from matplotlib.colors import to_hex
@@ -7,6 +8,8 @@ import streamlit.components.v1 as components
 from utils import *
 from theme import *
 from user import User
+from Recommender_Embeddings import *
+from Recommender import Recommender
 
 #######################
 # Page configuration
@@ -26,7 +29,7 @@ title_font_size_rem = px_to_rem(title_font_size_px)
 subtitle_font_size_px = title_font_size_px / 1.1
 subtitle_font_size_rem = px_to_rem(subtitle_font_size_px)
 
-top_padding_px, left_padding_px, right_padding_px, bottom_padding_px = 100, 100, 100, 100
+top_padding_px, left_padding_px, right_padding_px, bottom_padding_px = 150, 100, 150, 150
 top_padding_rem, left_padding_rem, right_padding_rem, bottom_padding_rem = px_to_rem(top_padding_px), px_to_rem(left_padding_px), px_to_rem(right_padding_px), px_to_rem(bottom_padding_px)
 
 title_x_orient, title_y_orient = 0.05, 0.95
@@ -326,9 +329,9 @@ def render_track_progress_donut(df):
 
         # Color logic
         ring_color = (
-            colors.primary_chart_color if completed == 1 else
-            colors.secondary_chart_color if completed >= 0.5 else
-            colors.secondary_text_color if completed > 0 else "#141518"
+            delta_green if completed == 1 else
+            colors.primary_chart_color if completed >= 0.5 else
+            colors.secondary_chart_color if completed > 0 else "#141518"
         )
 
         # Add trace for the ring
@@ -349,20 +352,27 @@ def render_track_progress_donut(df):
         ))
 
         # Custom legend item as annotation
+        if completed == 1:
+            rect_emoji = "🟩"  # green
+        elif completed >= 0.5:
+            rect_emoji = "🟥" 
+        elif completed > 0:
+            rect_emoji = "🟨"  # white
+        else:
+            rect_emoji = "⬜"  # red
         custom_legend_items.append(
             dict(
-                x=1.2,
-                y=0.9 - i * 0.15,
+                x=0.9,
+                y=1.2 - i / (len(df) - 3.2),
                 xref='paper',
                 yref='paper',
+                xanchor="left",
+                yanchor="middle",
                 showarrow=False,
                 align="left",
-                text=(
-                    f"<span style='display:inline-block; width:12px; height:12px; background-color:{colors.primary_chart_color};"
-                    f"border-radius:3px; margin-right:8px;'></span>"
-                    f"<span style='font-size:{subtitle_font_size_px}px; color:{colors.secondary_text_color};'>"
-                    f"<b>{row['Module_Type']}</b>: {int(completed * 100)}%</span>"
-                ),
+                text=f"{rect_emoji}   <b>{row['Module_Type']}</b>: {int(completed * 100)}%",
+                font=dict(size=subtitle_font_size_px,  # increase size here
+                  color=colors.secondary_text_color),
                 bgcolor="rgba(0,0,0,0)",
                 opacity=1
             )
@@ -401,7 +411,7 @@ def render_track_gpa_barchart(df):
         x=[5] * len(df),
         orientation='h',
         marker=dict(
-            color=colors.app_bgcolor,
+            color=colors.secondary_chart_color,
             line=dict(color=colors.app_bgcolor)
         ),
         hoverinfo='skip',
@@ -414,10 +424,7 @@ def render_track_gpa_barchart(df):
         y=df['Module_Type'],
         x=df['CGPA'],
         orientation='h',
-        marker=dict(color=[
-            colors.primary_chart_color if val >= user.snapshot.cgpa else colors.secondary_chart_color
-            for val in df['CGPA']
-            ]
+        marker=dict(color=[colors.primary_chart_color for val in df['CGPA']]
         ),
         hovertemplate='Cumulative GPA: %{x}<extra></extra>',
         name='Cumulative GPA',
@@ -429,7 +436,7 @@ def render_track_gpa_barchart(df):
         x=[None],
         y=[None],
         marker=dict(color=colors.primary_chart_color),
-        name=f'>=  {user.snapshot.cgpa}',
+        name=f'Track CGPA',
         hoverinfo='skip',
         showlegend=True
     ))
@@ -438,7 +445,7 @@ def render_track_gpa_barchart(df):
         x=[None],
         y=[None],
         marker=dict(color=colors.secondary_chart_color),
-        name=f'<  {user.snapshot.cgpa}',
+        name=f"Out of 5.0",
         hoverinfo='skip',
         showlegend=True
     ))
@@ -469,14 +476,14 @@ def render_track_gpa_barchart(df):
             x=1.05, y=1.05,
             xanchor='left', yanchor='top',
             font=dict(
-                size=subtitle_font_size_px,  # Optional: set size
+                size=x_axis_tick_size_px,  # Optional: set size
                 color=colors.secondary_text_color         # 👈 Your desired color (e.g., "#CCCCCC")
             ),
             bgcolor='rgba(0,0,0,0)',         # Optional: make background transparent
             borderwidth=0                   # Optional: remove border
         ),
         height=440,
-        margin=dict(l=left_padding_px+50, r=right_padding_px+50, t=top_padding_px, b=bottom_padding_px),
+        margin=dict(l=left_padding_px+50, r=right_padding_px+50, t=top_padding_px-50, b=bottom_padding_px-50),
         plot_bgcolor=colors.chart_background_color,
         paper_bgcolor=colors.chart_background_color,
         showlegend=True
@@ -504,7 +511,6 @@ def render_cgpa_trend_waterfallchart(df):
                 last_cgpa = cgpa
             else:
                 padded_cgpas.append(last_cgpa)
-        # padded_cgpas = [term_cgpa_map.get(term, 0) for term in padded_terms]
 
         padded_measures = [term_measure_map.get(term, "relative") for term in padded_terms]
         return padded_cgpas, padded_terms, padded_measures
@@ -524,7 +530,6 @@ def render_cgpa_trend_waterfallchart(df):
         else:
             measure_vector.append('relative')
         
-        # term = str(term)
         year_vector.append(term)
 
     padded_cgpas, padded_terms, padded_measures = pad_missing_lists(year_list=year_vector,
@@ -554,10 +559,10 @@ def render_cgpa_trend_waterfallchart(df):
         y=plot_df['CGPA'],
         mode='lines+markers',
         line=dict(color=colors.primary_chart_color, width=3, shape='spline'),
-        marker=dict(size=9, color=colors.primary_chart_color),
+        marker=dict(size=5, color=colors.secondary_chart_color),
         name='CGPA Trend',
         fill='tozeroy',
-        fillcolor=hex_to_rgba(colors.primary_chart_color, alpha=0.1)
+        fillcolor=hex_to_rgba(colors.primary_chart_color, alpha=0.2) if theme=="Dark" else colors.chart_background_color# single semi-transparent fill
     ))
 
     # Add delta annotations
@@ -607,7 +612,7 @@ def render_cgpa_trend_waterfallchart(df):
             bgcolor='rgba(0,0,0,0)'
         ),
         height=440,
-        margin=dict(l=left_padding_px, r=right_padding_px, t=top_padding_px, b=bottom_padding_px),
+        margin=dict(l=left_padding_px+50, r=right_padding_px, t=top_padding_px-50, b=bottom_padding_px-50),
         showlegend=True
     )
  
@@ -774,9 +779,9 @@ def render_table(df):
         elif rate_percent >= 50:
             return colors.primary_chart_color
         elif rate_percent > 0:
-            return colors.secondary_chart_color
+            return colors.secondary_text_color
         else:
-            return "#888888"
+            return delta_red
 
     styled_df = df[['Module_Type', 'Completion_Rate', 'Completion_Status']].copy()
     styled_df = styled_df.sort_values(by='Completion_Rate', ascending=False)
@@ -802,6 +807,7 @@ def render_table(df):
     """
 
     # Final HTML + CSS
+    hover_color = colors.primary_chart_color if theme == "Dark" else colors.secondary_chart_color
     html_string = f"""
     <style>
         .table-wrapper {{
@@ -854,7 +860,7 @@ def render_table(df):
         }}
 
         .styled-table tbody tr:hover {{
-            background-color: {colors.secondary_chart_color};
+            background-color: {hover_color};
             color: {colors.primary_text_color};
             cursor: pointer;
         }}
@@ -894,6 +900,153 @@ def render_table(df):
     # Render in Streamlit
     components.html(html_string, height=600, width=5000, scrolling=True)
 
+def render_top_R_modules(modules_alignment_df):
+
+    # ========================
+    # Heatmap
+    # ========================
+    
+    heatmap_df = modules_alignment_df[['Module_Code']+user.career_tags].set_index('Module_Code').copy()
+    display_text = np.array([[f"{v:.2f}" for v in row] for row in heatmap_df.values])
+
+    heatmap=go.Heatmap(
+        z=heatmap_df.values,   # Scores
+        x=heatmap_df.columns,  # Career tags
+        y=heatmap_df.index,    # Modules
+        colorscale=[
+            [0, colors.chart_background_color] if theme == "Light" else [0, colors.app_bgcolor],
+            [0.5, colors.secondary_chart_color] if theme == "Light" else [0.5, colors.chart_background_color],
+            [1, colors.primary_chart_color]
+        ],            
+        colorbar=dict(
+            # title="Career Alignment Score",
+            titlefont=dict(size=subtitle_font_size_px, color=colors.secondary_text_color),
+            tickfont=dict(size=subtitle_font_size_px, color=colors.secondary_text_color),
+            thickness=12,
+            len=0.7,
+            outlinewidth=0,
+            y=1,
+            yanchor="top"
+        ),
+        zmin=heatmap_df.values.min(),
+        zmax=heatmap_df.values.max(),
+        text=display_text,              # show text in each cell
+        texttemplate="%{text}",          # use the text values
+        textfont=dict(color="white", size=20),    # color of the numbers
+        hovertemplate="<b>%{y}</b><br>%{x}: %{z}<extra></extra>",
+        xgap=0,
+        ygap=0,
+        showscale=True
+    )
+
+    # ========================
+    # Beeswarm Chart
+    # ========================
+    
+    top_modules_sorted = modules_alignment_df.sort_values("final_score", ascending=False)
+    np.random.seed(900)  # for reproducibility
+    top_modules_sorted['y_jitter'] = np.random.uniform(-0.2, 0.2, size=len(top_modules_sorted))
+
+    # Create scatter trace instead of bar
+    beeswarm_chart = go.Scatter(
+        x=top_modules_sorted["final_score"],
+        y=top_modules_sorted["y_jitter"],  # just for spreading points
+        mode='markers+text',
+        marker=dict(
+            size=15,
+            color=delta_green if theme=="Dark" else colors.secondary_chart_color,
+            line=dict(width=2.5 if theme=="Dark" else 5, 
+                      color=colors.primary_chart_color),
+            symbol="square-open" if theme=="Dark" else "circle"
+        ),
+        customdata=top_modules_sorted["Module_Code"],  # pass module names for hover
+        hovertemplate="<b>%{customdata}</b><br>Final Score: %{x}<extra></extra>"
+    )
+
+    # ========================
+    # Combine into subplots
+    # ========================
+
+    fig = make_subplots(
+        rows=2, cols=1,
+        row_heights=[0.8, 0.2],
+        specs=[[{"type": "heatmap"}],
+                [{"type": "xy"}]],
+        vertical_spacing=0.2,
+    )
+
+    fig.add_trace(beeswarm_chart, row=2, col=1)
+    fig.add_trace(heatmap, row=1, col=1)
+
+    fig.update_xaxes(
+                        title_text="Final Score (between 0 and 1)",
+                        title_font=dict(size=x_axis_tick_size_px),
+                        tickfont=dict(size=x_axis_tick_size_px), 
+                        showgrid=False, 
+                        showline=False, 
+                        ticks="", 
+                        zeroline=False, 
+                        title_standoff=50,
+                        row=2, col=1)
+    
+    fig.update_xaxes(
+                        tickfont=dict(size=x_axis_tick_size_px),
+                        showgrid=False, 
+                        showline=False, 
+                        ticks="", 
+                        zeroline=False, 
+                        row=1, col=1)
+    
+    fig.update_yaxes(title_text="Recommended Modules",
+                        title_font=dict(size=y_axis_tick_size_px),
+                        showgrid=False, 
+                        showline=False,
+                        ticks="", 
+                        zeroline=False, 
+                    #  autorange="reversed", 
+                        showticklabels=False, 
+                        row=2, col=1)
+    
+    fig.update_yaxes(tickfont=dict(size=y_axis_tick_size_px), 
+                        showgrid=False, 
+                        showline=False, 
+                        ticks="",
+                        zeroline=False, 
+                        autorange="reversed", 
+                        row=1, col=1)
+
+    fig.update_layout(
+        bargap=0.4,
+        height=920,
+        margin=dict(t=(top_padding_px), l=left_padding_px+50, r=right_padding_px, b=bottom_padding_px),  # Extra bottom space for annotations
+        title=dict(
+            text="🗂️ Recommendation Analysis for your Main Major" if user.main_major is not None else "🗂️ Modules with High Popularity Scores",
+            font=dict(size=title_font_size_px, color=colors.primary_text_color, family="Inter, sans-serif"),
+            x=title_x_orient,
+            xanchor='left',
+            y=title_y_orient,
+            yanchor='top'
+        ),
+        plot_bgcolor=colors.chart_background_color,
+        paper_bgcolor=colors.chart_background_color,
+        font=dict(color=colors.secondary_text_color)
+    )
+
+    # Add a background rectangle for the beeswarm subplot
+    fig.add_shape(
+        type="rect",
+        xref="x2 domain",  # restrict to the x-axis domain of subplot 2
+        yref="y2 domain",  # restrict to the y-axis domain of subplot 2
+        x0=0, x1=1,
+        y0=-0.45, y1=1.5,
+        fillcolor=colors.app_bgcolor,  # <-- change to your desired color
+        opacity=1,
+        layer="below",  # put it behind the chart
+        line=dict(width=0)
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
 #######################
 # Helper Functions for Utility
 
@@ -928,6 +1081,36 @@ def recommend_modules(main_major, k=3):
         data = data.head(k)
         return set(data['Module_Code']), data
 
+def set_background_image(image_path, opacity=0.2, size="cover"):
+        """
+        Set a background image for the Streamlit page.
+        
+        Args:
+            image_path (str): path to your image
+            opacity (float): 0 to 1, transparency of the image
+            size (str): CSS background-size property ("cover", "contain", "100% 100%", etc.)
+        """
+        import base64
+        with open(image_path, "rb") as f:
+            data = f.read()
+        img_base64 = base64.b64encode(data).decode()
+
+        st.markdown(
+            f"""
+            <style>
+            .stApp {{
+                background-image: url("data:image/png;base64,{img_base64}");
+                background-size: {size};
+                background-repeat: no-repeat;
+                background-position: center;
+                background-attachment: fixed;
+                opacity: {opacity};
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
 #######################
 # Reading Sample Data
 
@@ -941,40 +1124,30 @@ if 'page' not in st.session_state:
     st.session_state.page = 'download'
 
 if st.session_state.page == 'download':
-
+    
+    set_background_image("./images/landing_page_final.jpg", opacity=1, size="cover")
+    
     col1, col2, col3 = st.columns([1,2,1])
 
     with col2:
 
-        for _ in range(10):
+        for _ in range(15):
             render_space()
-
-        # -- NUS Logo:
-
-        img_base64 = get_base64_image("./images/NUS_Logo.png")
-        st.markdown(
-            f"""
-            <div style="text-align: center;">
-                <img src="data:image/png;base64,{img_base64}" alt="NUS Logo" width="500">
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
 
         # -- Style Download Page (Header, Subtext, Download button, Page Transition button):
 
-        style_download_page(main_text="Step 1: 📥 Download!",
+        style_download_page(main_text="Road to Graduation:",
                             sub_text="Don't have an excel template? Downwload one below",
-                            maintext_color="#1b46f2",
-                            maintext_fontsize=f"{title_font_size_px * 2}px",
-                            subtext_color="#000000",
+                            maintext_color="white",
+                            maintext_fontsize=f"{title_font_size_px * 3}px",
+                            subtext_color="white",
                             subtext_fontsize=f"{title_font_size_px}px",
-                            download_button_bgcolor="#fa4202",
+                            download_button_bgcolor="#00000000",
                             download_button_textcolor="#ffffff",
-                            download_button_hovercolor="#fa4202",
-                            page_transition_bgcolor="#fa4202",
+                            download_button_hovercolor="#fe523a",
+                            page_transition_bgcolor="#00000000",
                             page_transition_textcolor="#ffffff",
-                            page_transition_hovercolor="#fa4202")
+                            page_transition_hovercolor="#fe523a")
                             
         # -- Download button:
 
@@ -999,6 +1172,8 @@ if st.session_state.page == 'download':
 # -------------------------
 elif st.session_state.page == 'upload':
 
+    set_background_image("./images/landing_page_final.jpg", opacity=1, size="cover")
+
     col1, col2, col3 = st.columns([1,1,1])
 
     with col2:
@@ -1008,15 +1183,15 @@ elif st.session_state.page == 'upload':
         
         # -- Style Upload Page (Header, Uploader, Page Transition button):
 
-        style_upload_page(main_text="Step 2: 📤 Upload!",
-                          maintext_color="#1b46f2",
+        style_upload_page(main_text=" ",
+                          maintext_color="#00000000",
                           maintext_fontsize=f"{title_font_size_px * 2}px",
-                          uploader_bgcolor="#fa4202",
-                          uploader_fontcolor="#ffffff",
+                          uploader_bgcolor="#00000000",
+                          uploader_fontcolor="black",
                           uploader_fontsize=f"{title_font_size_px}px",
-                          page_transition_bgcolor="#fa4202",
+                          page_transition_bgcolor="#00000000",
                           page_transition_textcolor="#ffffff",
-                          page_transition_hovercolor="#fa4202")
+                          page_transition_hovercolor="#fe523a")
 
         # -- Upload Excel File:
 
@@ -1053,7 +1228,7 @@ elif st.session_state.page == 'dashboard':
 
         # -- Color Theme Widget:
 
-        theme_options = ["Light", "Dark"]
+        theme_options = ["Dark", "Light"]
         theme = st.selectbox("Select a Color Theme:", options=theme_options)
 
         # -- Initialize Color Palette:
@@ -1083,6 +1258,11 @@ elif st.session_state.page == 'dashboard':
                            font_weight='300')
         
         # -- Main Major Selection Widget:
+        st.markdown("""
+            <style>
+            .stSelectbox {margin-bottom: -25px;}
+            </style>
+        """, unsafe_allow_html=True)
 
         specialisation_options = [track for track in selected_tracks if (
             track.startswith('BBA-') and
@@ -1094,6 +1274,48 @@ elif st.session_state.page == 'dashboard':
         # -- Style Main Major Selection Widget based on Color Theme:
         
         style_widget_label(label="Select Your Main Major:",
+                           color=colors.primary_text_color,
+                           font_size='40px',
+                           font_weight='300')
+        
+        # -- User Career-Tags Multiselect Widget:
+
+        career_options = list(careers_df[careers_df['Major']==main_major]['Career'].unique())
+
+        with st.container():
+            
+            st.markdown("""
+                <style>
+                div[data-testid="stSelectbox"] {
+                    margin-bottom: -35px;  /* reduce spacing only for selectboxes in this container */
+                }
+                </style>
+            """, unsafe_allow_html=True)
+
+            career_ranking = {}
+            max_tags = 4
+            selected_careers = set()
+            career_options2 = career_options.copy()
+
+            for i in range(min(max_tags, len(career_options))):
+                label = "Rank Your Career Choices (Top to Bottom):" if i == 0 else " "
+                career_tag = st.selectbox(
+                    label=label,
+                    options=career_options2+[None],
+                    index=0,
+                    key=f"career_selectbox_{i}"
+                    )
+                
+                if career_tag is not None:
+                    selected_careers.add(career_tag)
+                    career_options2 = [career for career in career_options2 if career not in selected_careers]
+                    career_ranking[career_tag] = max_tags - i
+            
+            career_tags = [career for career in career_ranking.keys() if career is not None]
+
+        # -- Style User Career-Tags Multiselect Widget based on Color Theme:
+        
+        style_widget_label(label="Rank Your Career Choices (Top to Bottom):",
                            color=colors.primary_text_color,
                            font_size='40px',
                            font_weight='300')
@@ -1120,7 +1342,25 @@ elif st.session_state.page == 'dashboard':
          # -- Apply Filtering:
 
         user.main_major = main_major
+        user.career_tags = career_tags
         user.apply_filter(selected_tracks)
+
+        if not user.career_tags:
+            st.markdown(
+                f"""
+                <div style="
+                    background-color: {colors.primary_chart_color};
+                    color: white;
+                    padding:16px;
+                    border-left:6px solid {colors.secondary_chart_color};
+                    border-radius:8px;
+                    font-weight:500;">
+                    ⚠️ Please select at least one career of interest!
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            st.stop()
 
         if user.filtered_data is None or user.filtered_data.empty:
             st.markdown(
@@ -1142,7 +1382,7 @@ elif st.session_state.page == 'dashboard':
         # -- Page Transition (Back to Upload) button:
 
         style_page_transition_button(bgcolor=colors.app_bgcolor, 
-                                     textcolor=colors.secondary_text_color, 
+                                     textcolor="white", 
                                      hovercolor=colors.primary_text_color)
         
         if st.button("Back to Upload"):
@@ -1194,7 +1434,10 @@ elif st.session_state.page == 'dashboard':
             SU_icon = SU_light_icon
             study_year_icon = study_year_light_icon
 
-        render_CGPA_box(label="Cumulative GPA", sublabel="Out of 5.0",value=user.snapshot.cgpa)
+        render_CGPA_box(label="Cumulative GPA", 
+                        sublabel="Out of 5.0",
+                        value=user.snapshot.cgpa,
+                        bg_color=colors.primary_chart_color)
         render_space()
 
         render_metric_box(label='Total MCs', 
@@ -1251,10 +1494,21 @@ elif st.session_state.page == 'dashboard':
 
             # -- Recommended Modules, Track Progress Table:
 
-            top_modules, top_modules_df = recommend_modules(main_major=user.main_major)
-            render_demand_vacancy_trends(elective_df=top_modules_df, 
-                                         demand_df=bba_electives_demand_vacancy_data,
-                                         top_modules=top_modules); render_space()
+            career_ranking = {k : (v / sum(career_ranking.values())) for k, v in career_ranking.items()}
+            R = 10
+
+            recommender = Recommender()
+            recommender.fit(user_career_tags=user.career_tags, user_career_ranking=career_ranking)
+            top_modules = recommender.recommend_modules(R=R, return_modcodes=True)
+            top_modules_CAV_full = recommender.return_CAV_dataframe(top_R_modules=top_modules)
+            top_modules_CAV = top_modules_CAV_full[['Module_Code']+user.career_tags]
+
+            render_top_R_modules(modules_alignment_df=top_modules_CAV_full);render_space()
+            
+            # top_modules, top_modules_df = recommend_modules(main_major=user.main_major)
+            # render_demand_vacancy_trends(elective_df=top_modules_df, 
+            #                              demand_df=bba_electives_demand_vacancy_data,
+            #                              top_modules=top_modules); render_space()
             
             render_table(track_status)
 
