@@ -2,11 +2,12 @@ import pandas as pd
 from utils import *
 import re
 import nltk
+nltk.download("punkt", quiet=True)
+nltk.download("stopwords", quiet=True)
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from sentence_transformers import SentenceTransformer
 import os
-nltk.download("punkt")
 
 '''
     1) This script generates embeddings for Career Tags and Modules' Descriptions for the Recommendation System
