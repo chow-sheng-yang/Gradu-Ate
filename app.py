@@ -618,158 +618,6 @@ def render_cgpa_trend_waterfallchart(df):
  
     st.plotly_chart(fig, use_container_width=True)
 
-def render_demand_vacancy_trends(elective_df: pd.DataFrame, demand_df: pd.DataFrame, top_modules: set):
-
-    term_order = ["AY20-21-Sem-2",
-                  "AY20-21-Special-Term-2",
-                  "AY21-22-Sem-1", 
-                  "AY21-22-Sem-2", 
-                  "AY22-23-Sem-1",
-                  "AY22-23-Sem-2",
-                  "AY23-24-Sem-1",
-                  "AY23-24-Sem-2",
-                  "AY23-24-Special-Term-1",
-                  "AY24-25-Sem-1",
-                  "AY24-25-Sem-2",
-                  "AY25-26-Sem-1"]
-    
-    term_order = [term for term in term_order if term in set(demand_df['Academic_Term'].unique())]
-
-    # Filter to only top 3 modules
-    demand_df = demand_df[demand_df['Module_Code'].isin(top_modules)].copy()
-    elective_df = elective_df[elective_df['Module_Code'].isin(top_modules)].copy()
-
-    # Order the x-axis
-    demand_df['Academic_Term'] = pd.Categorical(demand_df['Academic_Term'], categories=term_order, ordered=True)
-
-    # Sort for consistent plotting
-    demand_df.sort_values(by=['Academic_Term', 'Module_Code'], inplace=True)
-
-    # Create figure with 2 rows
-    fig = make_subplots(
-        rows=2, cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.1,
-        row_heights=[0.4, 0.6]
-    )
-
-    color_map = [colors.primary_chart_color, colors.secondary_chart_color, colors.secondary_text_color]  # You can customize this
-    module_colors = {mod: color_map[i] for i, mod in enumerate(top_modules)}
-
-    # Line Chart for Demand
-    for module in top_modules:
-        df_mod = demand_df[demand_df['Module_Code'] == module]
-        fig.add_trace(go.Scatter(
-            x=df_mod['Academic_Term'],
-            y=df_mod['Demand'],
-            mode='lines+markers',
-            name=f"{module} Demand",
-            line=dict(shape='spline', color=module_colors[module], width=3),
-            marker=dict(size=10),
-            hovertemplate=f"<b>{module}</b><br>Term: %{{x}}<br>Demand: %{{y}}<extra></extra>",
-            fill='tozeroy',
-            fillcolor=hex_to_rgba(module_colors[module], alpha=0.05)
-        ), row=2, col=1)
-
-    # Add popularity score blocks as horizontal annotations
-    positions = [0, 0.25, 0.73] 
-    y_pos = 0.95
-
-    for i, module in enumerate(top_modules):
-        pop_score = elective_df.loc[elective_df['Module_Code'] == module, 'rank'].values[0]
-        score_text = f"{pop_score:.2f}"
-
-        fig.add_annotation(
-            x=positions[i],
-            y=y_pos,
-            xref='paper',
-            yref='paper',
-            text=(
-                f"<span style='font-size:{title_font_size_px}px; color: {colors.primary_text_color};'>{module}</span><br>"
-                f"<br>"
-                f"<span style='font-size:{subtitle_font_size_px-3}px; color:{colors.secondary_text_color};'>Ranking Score:</span><br>"
-                f"<br><br><br><br>"
-                f"<span style='font-size:70px; font-weight:bold; color:{module_colors[module]}; display:inline-block;'>{score_text}</span>"
-                f"<span style='font-size:30px; color: {colors.secondary_text_color}'> /5</span></span>"
-            ),
-            showarrow=False,
-            align='center',
-            font=dict(size=14, color="#000000", family="Inter, sans-serif"),
-            borderpad=8,
-            bgcolor=colors.chart_background_color,
-            opacity=0.9
-        )
-    
-    # Subtext beside popularity scores
-    fig.add_annotation(
-        x=1.08,
-        y=y_pos,
-        xref='paper',
-        yref='paper',
-        text=(
-            f"<span style='font-size:{subtitle_font_size_px-2}px; color:{colors.secondary_text_color};'>"
-            f"<b>How Is Ranking Calculated?</b><br><br><br>"
-            f"<span style='font-size:{subtitle_font_size_px-7}px; color:{colors.secondary_text_color};'>"
-            f"<span style='color:{colors.secondary_chart_color};'>●</span> Demand to Vacancy Ratio<br><br>"
-            f"<span style='color:{colors.secondary_chart_color};'>●</span> Oversubscription Trend<br><br>"
-            f"<span style='color:{colors.secondary_chart_color};'>●</span> Demand Trend<br><br>"
-            f"<span style='color:{colors.secondary_chart_color};'>●</span> Demand Inconsistency over<br>Semesters</i>"
-            f"</span>"
-        ),
-        showarrow=False,
-        align='left',
-        borderpad=4,
-        opacity=1
-    )
-
-   # Layout
-
-    fig.update_xaxes(
-        tickfont=dict(size=x_axis_tick_size_px, color=colors.secondary_text_color),
-        showgrid=False,
-        showticklabels=True,
-        categoryorder='array',
-        categoryarray=term_order,
-        row=2,
-        col=1
-    )
-
-    fig.update_yaxes(
-        title=dict(text='Demand', font=dict(size=y_axis_tick_size_px, color=colors.secondary_text_color)),
-        tickfont=dict(size=y_axis_tick_size_px, color=colors.secondary_text_color),
-        showgrid=False,
-        row=2,
-        col=1
-    )
-
-    fig.update_layout(
-        height=920,
-        margin=dict(t=top_padding_px, l=left_padding_px, r=right_padding_px, b=bottom_padding_px+50),  # Extra bottom space for annotations
-        title=dict(
-            text="🗂️ Recommended Modules for Your Main Major" if user.main_major is not None else "🗂️ Modules with High Popularity Scores",
-            font=dict(size=title_font_size_px, color=colors.primary_text_color, family="Inter, sans-serif"),
-            x=title_x_orient,
-            xanchor='left',
-            y=title_y_orient,
-            yanchor='top'
-        ),
-        legend=dict(
-            orientation='h',
-            yanchor='bottom',
-            y=0.55,
-            xanchor='left',
-            x=0.5,
-            font=dict(size=x_axis_tick_size_px, color=colors.secondary_text_color),
-            bgcolor='rgba(0,0,0,0)'
-        ),
-        plot_bgcolor=colors.chart_background_color,
-        paper_bgcolor=colors.chart_background_color,
-        font=dict(color=colors.secondary_text_color),
-        showlegend=True
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
 def render_table(df):
 
     # Color mapping function for Completion_Rate
@@ -1049,37 +897,6 @@ def render_top_R_modules(modules_alignment_df):
 
 #######################
 # Helper Functions for Utility
-
-def recommend_modules(main_major, k=3):
-
-    data = electives_ranking.copy()
-
-    min_score = data['popularity_score'].min()
-    max_score = data['popularity_score'].max()
-    if min_score == max_score:
-        data['rank'] = pd.Series([5] * len(data['popularity_score']))
-    else:
-        data['rank'] = 1 + 9 * (data['popularity_score']) / (max_score - min_score)
-    
-    data = data[['Module_Code', 
-                 'Module_Type',
-                'Module_Title', 
-                'DVR_scaled', 
-                'Oversubscribed_weighted_scaled',
-                'LR_Coefficient_scaled',
-                'CoV_scaled',
-                'popularity_score',
-                'rank']]
-
-    if main_major is not None:
-        
-        data = data[data['Module_Type']==main_major].sort_values(by='rank', ascending=False)
-        data = data.head(k)
-        return set(data['Module_Code']), data
-    else:
-        data = data.sort_values(by='rank', ascending=False)
-        data = data.head(k)
-        return set(data['Module_Code']), data
 
 def set_background_image(image_path, opacity=0.2, size="cover"):
         """
@@ -1504,12 +1321,6 @@ elif st.session_state.page == 'dashboard':
             top_modules_CAV = top_modules_CAV_full[['Module_Code']+user.career_tags]
 
             render_top_R_modules(modules_alignment_df=top_modules_CAV_full);render_space()
-            
-            # top_modules, top_modules_df = recommend_modules(main_major=user.main_major)
-            # render_demand_vacancy_trends(elective_df=top_modules_df, 
-            #                              demand_df=bba_electives_demand_vacancy_data,
-            #                              top_modules=top_modules); render_space()
-            
             render_table(track_status)
 
     #######################
