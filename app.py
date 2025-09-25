@@ -1156,11 +1156,30 @@ elif st.session_state.page == 'dashboard':
             st.session_state.user = User(raw_data=df)
         user = st.session_state.user
 
-         # -- Apply Filtering:
+        # -- Apply Filtering:
 
         user.main_major = main_major
         user.career_tags = career_tags
         user.apply_filter(selected_tracks)
+
+        # -- Catch None Errors:
+
+        if not user.main_major:
+            st.markdown(
+                f"""
+                <div style="
+                    background-color: {colors.primary_chart_color};
+                    color: white;
+                    padding:16px;
+                    border-left:6px solid {colors.secondary_chart_color};
+                    border-radius:8px;
+                    font-weight:500;">
+                    ⚠️ Could not find any main major!
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            st.stop()
 
         if not user.career_tags:
             st.markdown(
